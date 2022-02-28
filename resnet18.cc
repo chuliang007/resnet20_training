@@ -65,7 +65,6 @@ void FracNet_T(
 		for (int b = 0; b < BATCH_SIZE; b ++){
 			for (int i = 0; i < WIDTH; i ++){
 				for (int j = 0; j < WIDTH; j ++){
-#pragma HLS PIPELINE
 					for (int k = 0; k < CHANNEL_IN_T; k ++) {
 						msb_fmap[i][b][k][i][j] = 0;
 						lsb_fmap[i][b][k][i][j] = 0;
@@ -81,26 +80,14 @@ void FracNet_T(
 		}
 	}
 
-	global_buffer_init_1:
-	for (int i = 0; i < NUM_WT_3x3; i ++) {
-		for (int b = 0; b < CHANNEL_OUT_T; b ++){
-			for (int i = 0; i < 3; i ++){
-				for (int j = 0; j < 3; j ++){
-#pragma HLS PIPELINE
-					for (int k = 0; k < CHANNEL_IN_T; k ++) {
-						grad_buf_t0[i][b][k][i][j] = 0;
-					}
+	global_buffer_init:
+	for (int c_out = 0; c_out < CHANNEL_OUT_T; c_out ++){
+		for (int c_in = 0; c_in < CHANNEL_IN_T; c_in ++) {
+			grad_buf_t1[c_out][c_in] = 0;
+			for (int row = 0; row < 3; row ++){
+				for (int col = 0; col < 3; col ++){
+					grad_buf_t0[c_out][c_in][row][col] = 0;
 				}
-			}
-		}
-	}
-
-	global_buffer_init_2:
-	for (int i = 0; i < NUM_WT_1x1; i ++) {
-		for (int b = 0; b < CHANNEL_OUT_T; b ++){
-#pragma HLS PIPELINE
-			for (int k = 0; k < CHANNEL_IN_T; k ++) {
-				grad_buf_t1[i][b][k] = 0;
 			}
 		}
 	}
@@ -109,11 +96,9 @@ void FracNet_T(
     int out_channels, out_channel_start, stride, conv_3x3_weight_ptr, conv_1x1_weight_ptr, ini;
 
 
-
 //////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////		Forward path		//////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////
-
 
 
 	////////////////////////////////////////////////
