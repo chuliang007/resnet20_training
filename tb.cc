@@ -8,18 +8,24 @@
 
 using namespace std;
 
-#define NUM_WT_3x3 16
-#define NUM_WT_1x1 3
+#define NUM_ACT 2205
+#define NUM_SC 42
+#define NUM_3x3_WT 2205
+#define NUM_1x1_WT 42
+
 #define BATCH_SIZE 4
-#define CHANNEL_IN_T 32
-#define CHANNEL_OUT_T 32
+#define CHANNEL_IN_T 64
+#define CHANNEL_OUT_T 64
+#define WIDTH_T 33
 
-float lr = 0.01;
-
-int16 image[BATCH_SIZE][3][32][32];
-int16 output[BATCH_SIZE][10];
-int16 weight_3x3_updated[NUM_WT_3x3][CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
-int16 weight_1x1_updated[NUM_WT_3x3][CHANNEL_OUT_T][CHANNEL_IN_T];
+float image[BATCH_SIZE][3][32][32];
+int8 output[BATCH_SIZE][10];
+int8 conv_3x3_weight_all[NUM_3x3_WT][CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
+int8 conv_1x1_weight_all[NUM_1x1_WT][CHANNEL_OUT_T][CHANNEL_IN_T];
+int8 msb_fmap[NUM_ACT][BATCH_SIZE][CHANNEL_IN_T][WIDTH_T][WIDTH_T];
+int8 lsb_fmap[NUM_SC][BATCH_SIZE][CHANNEL_IN_T][WIDTH_T][WIDTH_T];
+int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T];
+int8 out_buf_t1[NUM_SC][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T];
 
 // conv + bn_sw + relu_sw
 /* forward */
@@ -43,6 +49,7 @@ float conv1_grad[64][3][3][3];
 // layer 1_0
 /* forward */
 float layer1_0_conv1_weight[64][64][3][3];
+float layer1_0_conv1_weight_rot[64][64][3][3];
 float layer1_0_conv1_out[BATCH_SIZE][64][32][32];
 float layer1_0_bn1_weight[64];
 float layer1_0_bn1_bias[64];
@@ -50,6 +57,7 @@ float layer1_0_bn1_out[BATCH_SIZE][64][32][32];
 float layer1_0_relu1_out[BATCH_SIZE][64][32][32];
 
 float layer1_0_conv2_weight[64][64][3][3];
+float layer1_0_conv2_weight_rot[64][64][3][3];
 float layer1_0_conv2_out[BATCH_SIZE][64][32][32];
 float layer1_0_bn2_weight[64];
 float layer1_0_bn2_bias[64];
@@ -76,6 +84,7 @@ float layer1_0_conv2_grad[64][64][3][3];
 // layer 1_1
 /* forward */
 float layer1_1_conv1_weight[64][64][3][3];
+float layer1_1_conv1_weight_rot[64][64][3][3];
 float layer1_1_conv1_out[BATCH_SIZE][64][32][32];
 float layer1_1_bn1_weight[64];
 float layer1_1_bn1_bias[64];
@@ -83,6 +92,7 @@ float layer1_1_bn1_out[BATCH_SIZE][64][32][32];
 float layer1_1_relu1_out[BATCH_SIZE][64][32][32];
 
 float layer1_1_conv2_weight[64][64][3][3];
+float layer1_1_conv2_weight_rot[64][64][3][3];
 float layer1_1_conv2_out[BATCH_SIZE][64][32][32];
 float layer1_1_bn2_weight[64];
 float layer1_1_bn2_bias[64];
@@ -111,6 +121,7 @@ float layer1_1_conv2_grad[64][64][3][3];
 // layer 2_0
 /* forward */
 float layer2_0_conv1_weight[128][64][3][3];
+float layer2_0_conv1_weight_rot[64][128][3][3];
 float layer2_0_conv1_out[BATCH_SIZE][128][16][16];
 float layer2_0_bn1_weight[128];
 float layer2_0_bn1_bias[128];
@@ -118,6 +129,7 @@ float layer2_0_bn1_out[BATCH_SIZE][128][16][16];
 float layer2_0_relu1_out[BATCH_SIZE][128][16][16];
 
 float layer2_0_conv2_weight[128][128][3][3];
+float layer2_0_conv2_weight_rot[128][128][3][3];
 float layer2_0_conv2_out[BATCH_SIZE][128][16][16];
 float layer2_0_bn2_weight[128];
 float layer2_0_bn2_bias[128];
@@ -125,6 +137,7 @@ float layer2_0_bn2_out[BATCH_SIZE][128][16][16];
 float layer2_0_relu2_out[BATCH_SIZE][128][16][16];
 	// layer 2_0 downsample
 float layer2_0_conv_sc_weight[128][64][1][1];
+float layer2_0_conv_sc_weight_rot[64][128][1][1];
 float layer2_0_conv_sc_out[BATCH_SIZE][128][16][16];
 float layer2_0_bn_sc_weight[128];
 float layer2_0_bn_sc_bias[128];
@@ -156,6 +169,7 @@ float layer2_0_conv2_grad[128][128][3][3];
 // layer 2_1
 /* forward */
 float layer2_1_conv1_weight[128][128][3][3];
+float layer2_1_conv1_weight_rot[128][128][3][3];
 float layer2_1_conv1_out[BATCH_SIZE][128][16][16];
 float layer2_1_bn1_weight[128];
 float layer2_1_bn1_bias[128];
@@ -163,6 +177,7 @@ float layer2_1_bn1_out[BATCH_SIZE][128][16][16];
 float layer2_1_relu1_out[BATCH_SIZE][128][16][16];
 
 float layer2_1_conv2_weight[128][128][3][3];
+float layer2_1_conv2_weight_rot[128][128][3][3];
 float layer2_1_conv2_out[BATCH_SIZE][128][16][16];
 float layer2_1_bn2_weight[128];
 float layer2_1_bn2_bias[128];
@@ -191,6 +206,7 @@ float layer2_1_conv2_grad[128][128][3][3];
 // layer 3_0
 /* forward */
 float layer3_0_conv1_weight[256][128][3][3];
+float layer3_0_conv1_weight_rot[128][256][3][3];
 float layer3_0_conv1_out[BATCH_SIZE][256][8][8];
 float layer3_0_bn1_weight[256];
 float layer3_0_bn1_bias[256];
@@ -198,6 +214,7 @@ float layer3_0_bn1_out[BATCH_SIZE][256][8][8];
 float layer3_0_relu1_out[BATCH_SIZE][256][8][8];
 
 float layer3_0_conv2_weight[256][256][3][3];
+float layer3_0_conv2_weight_rot[256][256][3][3];
 float layer3_0_conv2_out[BATCH_SIZE][256][8][8];
 float layer3_0_bn2_weight[256];
 float layer3_0_bn2_bias[256];
@@ -205,6 +222,7 @@ float layer3_0_bn2_out[BATCH_SIZE][256][8][8];
 float layer3_0_relu2_out[BATCH_SIZE][256][8][8];
 	// layer 3_0 downsample
 float layer3_0_conv_sc_weight[256][128][1][1];
+float layer3_0_conv_sc_weight_rot[128][256][1][1];
 float layer3_0_conv_sc_out[BATCH_SIZE][256][8][8];
 float layer3_0_bn_sc_weight[256];
 float layer3_0_bn_sc_bias[256];
@@ -236,6 +254,7 @@ float layer3_0_conv2_grad[256][256][3][3];
 // layer 3_1
 /* forward */
 float layer3_1_conv1_weight[256][256][3][3];
+float layer3_1_conv1_weight_rot[256][256][3][3];
 float layer3_1_conv1_out[BATCH_SIZE][256][8][8];
 float layer3_1_bn1_weight[256];
 float layer3_1_bn1_bias[256];
@@ -243,6 +262,7 @@ float layer3_1_bn1_out[BATCH_SIZE][256][8][8];
 float layer3_1_relu1_out[BATCH_SIZE][256][8][8];
 
 float layer3_1_conv2_weight[256][256][3][3];
+float layer3_1_conv2_weight_rot[256][256][3][3];
 float layer3_1_conv2_out[BATCH_SIZE][256][8][8];
 float layer3_1_bn2_weight[256];
 float layer3_1_bn2_bias[256];
@@ -271,6 +291,7 @@ float layer3_1_conv2_grad[256][256][3][3];
 // layer 4_0
 /* forward */
 float layer4_0_conv1_weight[512][256][3][3];
+float layer4_0_conv1_weight_rot[256][512][3][3];
 float layer4_0_conv1_out[BATCH_SIZE][512][4][4];
 float layer4_0_bn1_weight[512];
 float layer4_0_bn1_bias[512];
@@ -278,6 +299,7 @@ float layer4_0_bn1_out[BATCH_SIZE][512][4][4];
 float layer4_0_relu1_out[BATCH_SIZE][512][4][4];
 
 float layer4_0_conv2_weight[512][512][3][3];
+float layer4_0_conv2_weight_rot[512][512][3][3];
 float layer4_0_conv2_out[BATCH_SIZE][512][4][4];
 float layer4_0_bn2_weight[512];
 float layer4_0_bn2_bias[512];
@@ -285,6 +307,7 @@ float layer4_0_bn2_out[BATCH_SIZE][512][4][4];
 float layer4_0_relu2_out[BATCH_SIZE][512][4][4];
 	// layer 4_0 downsample
 float layer4_0_conv_sc_weight[512][256][1][1];
+float layer4_0_conv_sc_weight_rot[256][512][1][1];
 float layer4_0_conv_sc_out[BATCH_SIZE][512][4][4];
 float layer4_0_bn_sc_weight[512];
 float layer4_0_bn_sc_bias[512];
@@ -316,6 +339,7 @@ float layer4_0_conv2_grad[512][512][3][3];
 // layer 4_1
 /* forward */
 float layer4_1_conv1_weight[512][512][3][3];
+float layer4_1_conv1_weight_rot[512][512][3][3];
 float layer4_1_conv1_out[BATCH_SIZE][512][4][4];
 float layer4_1_bn1_weight[512];
 float layer4_1_bn1_bias[512];
@@ -323,6 +347,7 @@ float layer4_1_bn1_out[BATCH_SIZE][512][4][4];
 float layer4_1_relu1_out[BATCH_SIZE][512][4][4];
 
 float layer4_1_conv2_weight[512][512][3][3];
+float layer4_1_conv2_weight_rot[512][512][3][3];
 float layer4_1_conv2_out[BATCH_SIZE][512][4][4];
 float layer4_1_bn2_weight[512];
 float layer4_1_bn2_bias[512];
@@ -395,7 +420,7 @@ void bn_sw(
 	float beta[CHANNEL]
 )
 {
-    int N = BATCH * HEIGHT * WIDTH;
+    float N = BATCH * HEIGHT * WIDTH;
 	float mu[CHANNEL];
 	float sigma[CHANNEL];
 
@@ -417,7 +442,10 @@ void bn_sw(
 			}
 		}
 	}
-	sigma = sqrt(sigma/N);
+    //sigma = sqrt(sigma/N);
+	for (int c=0; c<CHANNEL; c++){
+		sigma[c] = sqrt(sigma[c]/N);
+	}
 	for (int n=0; n<BATCH; n++){
 		for (int c=0; c<CHANNEL; c++){
 			for (int row=0; row<HEIGHT; row++){
@@ -441,7 +469,7 @@ void bn_bp_sw(
 	float g_beta[CHANNEL]									// out
 )
 {
-    int N = BATCH * HEIGHT * WIDTH;
+	float N = BATCH * HEIGHT * WIDTH;
 	float mu[CHANNEL];
 	float sigma[CHANNEL];
 
@@ -463,7 +491,10 @@ void bn_bp_sw(
 			}
 		}
 	}
-	sigma = sqrt(sigma/N);
+    //sigma = sqrt(sigma/N);
+	for (int c=0; c<CHANNEL; c++){
+		sigma[c] = sqrt(sigma[c]/N);
+	}
     for (int n=0; n<BATCH; n++){
         for (int c=0; c<CHANNEL; c++){
             for (int row=0; row<HEIGHT; row++){
@@ -698,7 +729,7 @@ void conv_3x3_sw_bp
 	int A = (HEIGHT_IN*stride - 1) % stride;
 	float input_pad[BATCH_IN][CHANNEL_IN][stride*(HEIGHT_IN-1)+1 + 2+A][stride*(WIDTH_IN-1)+1 + 2+A];
 	for (int bi = 0; bi < BATCH_IN; bi++) {
-		for (int co = 0; co < CHANNEL_OUT; co++) {
+		for (int co = 0; co < CHANNEL_IN; co++) {
 			for (int row = 0; row < HEIGHT_IN; row++) {
 				for (int col = 0; col < WIDTH_IN; col++) {
 					input_pad[bi][co][row*stride + 1][col*stride + 1] = input[bi][co][row][col];
@@ -743,7 +774,7 @@ void conv_1x1_sw_bp
 	int A = (HEIGHT_IN*stride - 1) % stride;
 	float input_pad[BATCH_IN][CHANNEL_IN][stride*(HEIGHT_IN-1)+1][stride*(WIDTH_IN-1)+1];
 	for (int bi = 0; bi < BATCH_IN; bi++) {
-		for (int co = 0; co < CHANNEL_OUT; co++) {
+		for (int co = 0; co < CHANNEL_IN; co++) {
 			for (int row = 0; row < HEIGHT_IN; row++) {
 				for (int col = 0; col < WIDTH_IN; col++) {
 					input_pad[bi][co][row*stride][col*stride] = input[bi][co][row][col];	// no 0-padding
@@ -810,7 +841,7 @@ void conv_3x3_sw_grad
 		}
 	}
 
-	// conv
+	// conv, stride 1
 	for (int co = 0; co < CHANNEL_OUT; co++) {
 		for (int ci = 0; ci < CHANNEL_IN; ci++) {
 			for (int row = 0; row < HEIGHT_OUT; row++) {
@@ -819,8 +850,8 @@ void conv_3x3_sw_grad
 					for (int bi = 0; bi < BATCH_IN; ci++) {
 						for (int krow = 0; krow < KERNEL_DIL; krow++) {
 							for (int kcol = 0; kcol < KERNEL_DIL; kcol++) {
-								int row_in = row*stride + krow;
-								int col_in = col*stride + kcol;
+								int row_in = row + krow;
+								int col_in = col + kcol;
 								accum += input_pad[bi][ci][row_in][col_in] * weight_dil[bi][co][krow][kcol];
 							}
 						}
@@ -855,7 +886,7 @@ void conv_1x1_sw_grad
 		}
 	}
 
-	// conv
+	// conv, stride 1
 	for (int co = 0; co < CHANNEL_OUT; co++) {
 		for (int ci = 0; ci < CHANNEL_IN; ci++) {
 			for (int row = 0; row < HEIGHT_OUT; row++) {
@@ -907,7 +938,7 @@ void get_image(unsigned char *images, unsigned int idx, float image[96][32][32])
 
 
 // #define BATCH_SIZE 4
-// #define lr 0.01
+// #define 0.01 0.01
 
 //--------------------
 //	  Forward GeMM
@@ -1111,25 +1142,25 @@ void backward(float error[BATCH_SIZE][10]) // right size ?
 	// layer 4_1
 	relu_bp_sw<BATCH_SIZE, 512, 4, 4>(error_avg_out, layer4_1_bn2_out, layer4_1_relu2_bp_out);
 	bn_bp_sw<BATCH_SIZE, 512, 4, 4>(layer4_1_relu2_bp_out, layer4_1_conv2_out, layer4_1_bn2_bp_out, layer4_1_bn2_weight, layer4_1_bn2_weight_act, layer4_1_bn2_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 512, 512, 4, 4, 4, 4>(layer4_1_bn2_bp_out, layer4_1_conv2_weight, layer4_1_conv2_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 512, 512, 4, 4, 4, 4>(layer4_1_bn2_bp_out, layer4_1_conv2_weight_rot, layer4_1_conv2_bp_out, 1);
 
 	relu_bp_sw<BATCH_SIZE, 512, 4, 4>(layer4_1_conv2_bp_out, layer4_1_bn1_out, layer4_1_relu1_bp_out);
 	bn_bp_sw<BATCH_SIZE, 512, 4, 4>(layer4_1_relu1_bp_out, layer4_1_conv1_out, layer4_1_bn1_bp_out, layer4_1_bn1_weight, layer4_1_bn1_weight_act, layer4_1_bn1_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 512, 512, 4, 4, 4, 4>(layer4_1_bn1_bp_out, layer4_1_conv1_weight, layer4_1_conv1_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 512, 512, 4, 4, 4, 4>(layer4_1_bn1_bp_out, layer4_1_conv1_weight_rot, layer4_1_conv1_bp_out, 1);
 	shortcut_sw<BATCH_SIZE, 512, 4, 4>(layer4_1_conv1_bp_out, error_avg_out, layer4_1_shortcut_bp_out);
 
 	// layer 4 downsample (conv1_bp & conv_sc_bp stride=2)
 	// layer 4_0
 	relu_bp_sw<BATCH_SIZE, 512, 4, 4>(layer4_1_shortcut_bp_out, layer4_0_bn2_out, layer4_0_relu2_bp_out);
 	bn_bp_sw<BATCH_SIZE, 512, 4, 4>(layer4_0_relu2_bp_out, layer4_0_conv2_out, layer4_0_bn2_bp_out, layer4_0_bn2_weight, layer4_0_bn2_weight_act, layer4_0_bn2_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 512, 512, 4, 4, 4, 4>(layer4_0_bn2_bp_out, layer4_0_conv2_weight, layer4_0_conv2_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 512, 512, 4, 4, 4, 4>(layer4_0_bn2_bp_out, layer4_0_conv2_weight_rot, layer4_0_conv2_bp_out, 1);
 
 	relu_bp_sw<BATCH_SIZE, 512, 4, 4>(layer4_0_conv2_bp_out, layer4_0_bn1_out, layer4_0_relu1_bp_out);
 	bn_bp_sw<BATCH_SIZE, 512, 4, 4>(layer4_0_relu1_bp_out, layer4_0_conv1_out, layer4_0_bn1_bp_out, layer4_0_bn1_weight, layer4_0_bn1_weight_act, layer4_0_bn1_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 512, 256, 4, 4, 8, 8>(layer4_0_bn1_bp_out, layer4_0_conv1_weight, layer4_0_conv1_bp_out, 2);
+	conv_3x3_sw_bp<BATCH_SIZE, 512, 256, 4, 4, 8, 8>(layer4_0_bn1_bp_out, layer4_0_conv1_weight_rot, layer4_0_conv1_bp_out, 2);
 	// shortcut_sw bn_sw + conv_1x1
 	bn_bp_sw<BATCH_SIZE, 512, 4, 4>(layer4_1_shortcut_bp_out, layer4_0_conv_sc_out, layer4_0_bn_sw_sc_bp_out, layer4_0_bn_sc_weight, layer4_0_bn_sc_weight_act, layer4_0_bn_sc_bias_act);
-	conv_1x1_sw_bp<BATCH_SIZE, 512, 256, 4, 4, 8, 8>(layer4_0_bn_sw_sc_bp_out, layer4_0_conv_sc_weight, layer4_0_conv_sc_bp_out, 2);
+	conv_1x1_sw_bp<BATCH_SIZE, 512, 256, 4, 4, 8, 8>(layer4_0_bn_sw_sc_bp_out, layer4_0_conv_sc_weight_rot, layer4_0_conv_sc_bp_out, 2);
 	shortcut_sw<BATCH_SIZE, 256, 8, 8>(layer4_0_conv_sc_bp_out, layer4_0_conv1_bp_out, layer4_0_shortcut_bp_out);
 
 	////////////////////////////////////
@@ -1139,25 +1170,25 @@ void backward(float error[BATCH_SIZE][10]) // right size ?
 	// layer 3_1
 	relu_bp_sw<BATCH_SIZE, 256, 8, 8>(layer4_0_shortcut_bp_out, layer3_1_bn2_out, layer3_1_relu2_bp_out);
 	bn_bp_sw<BATCH_SIZE, 256, 8, 8>(layer3_1_relu2_bp_out, layer3_1_conv2_out, layer3_1_bn2_bp_out, layer3_1_bn2_weight, layer3_1_bn2_weight_act, layer3_1_bn2_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 256, 256, 8, 8, 8, 8>(layer3_1_bn2_bp_out, layer3_1_conv2_weight, layer3_1_conv2_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 256, 256, 8, 8, 8, 8>(layer3_1_bn2_bp_out, layer3_1_conv2_weight_rot, layer3_1_conv2_bp_out, 1);
 
 	relu_bp_sw<BATCH_SIZE, 256, 8, 8>(layer3_1_conv2_bp_out, layer3_1_bn1_out, layer3_1_relu1_bp_out);
 	bn_bp_sw<BATCH_SIZE, 256, 8, 8>(layer3_1_relu1_bp_out, layer3_1_conv1_out, layer3_1_bn1_bp_out, layer3_1_bn1_weight, layer3_1_bn1_weight_act, layer3_1_bn1_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 256, 256, 8, 8, 8, 8>(layer3_1_bn1_bp_out, layer3_1_conv1_weight, layer3_1_conv1_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 256, 256, 8, 8, 8, 8>(layer3_1_bn1_bp_out, layer3_1_conv1_weight_rot, layer3_1_conv1_bp_out, 1);
 	shortcut_sw<BATCH_SIZE, 256, 8, 8>(layer3_1_conv1_bp_out, layer4_0_shortcut_bp_out, layer3_1_shortcut_bp_out);
 
 	// layer 3 downsample (conv1_bp & conv_sc_bp stride=2)
 	// layer 3_0
 	relu_bp_sw<BATCH_SIZE, 256, 8, 8>(layer3_1_shortcut_bp_out, layer3_0_bn2_out, layer3_0_relu2_bp_out);
 	bn_bp_sw<BATCH_SIZE, 256, 8, 8>(layer3_0_relu2_bp_out, layer3_0_conv2_out, layer3_0_bn2_bp_out, layer3_0_bn2_weight, layer3_0_bn2_weight_act, layer3_0_bn2_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 256, 256, 8, 8, 8, 8>(layer3_0_bn2_bp_out, layer3_0_conv2_weight, layer3_0_conv2_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 256, 256, 8, 8, 8, 8>(layer3_0_bn2_bp_out, layer3_0_conv2_weight_rot, layer3_0_conv2_bp_out, 1);
 
 	relu_bp_sw<BATCH_SIZE, 256, 8, 8>(layer3_0_conv2_bp_out, layer3_0_bn1_out, layer3_0_relu1_bp_out);
 	bn_bp_sw<BATCH_SIZE, 256, 8, 8>(layer3_0_relu1_bp_out, layer3_0_conv1_out, layer3_0_bn1_bp_out, layer3_0_bn1_weight, layer3_0_bn1_weight_act, layer3_0_bn1_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 256, 128, 8, 8, 16, 16>(layer3_0_bn1_bp_out, layer3_0_conv1_weight, layer3_0_conv1_bp_out, 2);
+	conv_3x3_sw_bp<BATCH_SIZE, 256, 128, 8, 8, 16, 16>(layer3_0_bn1_bp_out, layer3_0_conv1_weight_rot, layer3_0_conv1_bp_out, 2);
 	// shortcut_sw bn_sw + conv_1x1
 	bn_bp_sw<BATCH_SIZE, 256, 8, 8>(layer3_1_shortcut_bp_out, layer3_0_conv_sc_out, layer3_0_bn_sw_sc_bp_out, layer3_0_bn_sc_weight, layer3_0_bn_sc_weight_act, layer3_0_bn_sc_bias_act);
-	conv_1x1_sw_bp<BATCH_SIZE, 256, 128, 8, 8, 16, 16>(layer3_0_bn_sw_sc_bp_out, layer3_0_conv_sc_weight, layer3_0_conv_sc_bp_out, 2);
+	conv_1x1_sw_bp<BATCH_SIZE, 256, 128, 8, 8, 16, 16>(layer3_0_bn_sw_sc_bp_out, layer3_0_conv_sc_weight_rot, layer3_0_conv_sc_bp_out, 2);
 	shortcut_sw<BATCH_SIZE, 128, 16, 16>(layer3_0_conv_sc_bp_out, layer3_0_conv1_bp_out, layer3_0_shortcut_bp_out);
 
 	////////////////////////////////////
@@ -1167,25 +1198,25 @@ void backward(float error[BATCH_SIZE][10]) // right size ?
 	// layer 2_1
 	relu_bp_sw<BATCH_SIZE, 128, 16, 16>(layer3_0_shortcut_bp_out, layer2_1_bn2_out, layer2_1_relu2_bp_out);
 	bn_bp_sw<BATCH_SIZE, 128, 16, 16>(layer2_1_relu2_bp_out, layer2_1_conv2_out, layer2_1_bn2_bp_out, layer2_1_bn2_weight, layer2_1_bn2_weight_act, layer2_1_bn2_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 128, 128, 16, 16, 16, 16>(layer2_1_bn2_bp_out, layer2_1_conv2_weight, layer2_1_conv2_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 128, 128, 16, 16, 16, 16>(layer2_1_bn2_bp_out, layer2_1_conv2_weight_rot, layer2_1_conv2_bp_out, 1);
 
 	relu_bp_sw<BATCH_SIZE, 128, 16, 16>(layer2_1_conv2_bp_out, layer2_1_bn1_out, layer2_1_relu1_bp_out);
 	bn_bp_sw<BATCH_SIZE, 128, 16, 16>(layer2_1_relu1_bp_out, layer2_1_conv1_out, layer2_1_bn1_bp_out, layer2_1_bn1_weight, layer2_1_bn1_weight_act, layer2_1_bn1_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 128, 128, 16, 16, 16, 16>(layer2_1_bn1_bp_out, layer2_1_conv1_weight, layer2_1_conv1_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 128, 128, 16, 16, 16, 16>(layer2_1_bn1_bp_out, layer2_1_conv1_weight_rot, layer2_1_conv1_bp_out, 1);
 	shortcut_sw<BATCH_SIZE, 128, 16, 16>(layer2_1_conv1_bp_out, layer3_0_shortcut_bp_out, layer2_1_shortcut_bp_out);
 
 	// layer 2 downsample (conv1_bp & conv_sc_bp stride=2)
 	// layer 2_0
 	relu_bp_sw<BATCH_SIZE, 128, 16, 16>(layer2_1_shortcut_bp_out, layer2_0_bn2_out, layer2_0_relu2_bp_out);
 	bn_bp_sw<BATCH_SIZE, 128, 16, 16>(layer2_0_relu2_bp_out, layer2_0_conv2_out, layer2_0_bn2_bp_out, layer2_0_bn2_weight, layer2_0_bn2_weight_act, layer2_0_bn2_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 128, 128, 16, 16, 16, 16>(layer2_0_bn2_bp_out, layer2_0_conv2_weight, layer2_0_conv2_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 128, 128, 16, 16, 16, 16>(layer2_0_bn2_bp_out, layer2_0_conv2_weight_rot, layer2_0_conv2_bp_out, 1);
 
 	relu_bp_sw<BATCH_SIZE, 128, 16, 16>(layer2_0_conv2_bp_out, layer2_0_bn1_out, layer2_0_relu1_bp_out);
 	bn_bp_sw<BATCH_SIZE, 128, 16, 16>(layer2_0_relu1_bp_out, layer2_0_conv1_out, layer2_0_bn1_bp_out, layer2_0_bn1_weight, layer2_0_bn1_weight_act, layer2_0_bn1_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 128, 64, 16, 16, 32, 32>(layer2_0_bn1_bp_out, layer2_0_conv1_weight, layer2_0_conv1_bp_out, 2);
+	conv_3x3_sw_bp<BATCH_SIZE, 128, 64, 16, 16, 32, 32>(layer2_0_bn1_bp_out, layer2_0_conv1_weight_rot, layer2_0_conv1_bp_out, 2);
 	// shortcut_sw bn_sw + conv_1x1
 	bn_bp_sw<BATCH_SIZE, 128, 16, 16>(layer2_1_shortcut_bp_out, layer2_0_conv_sc_out, layer2_0_bn_sw_sc_bp_out, layer3_0_bn_sc_weight, layer3_0_bn_sc_weight_act, layer3_0_bn_sc_bias_act);
-	conv_1x1_sw_bp<BATCH_SIZE, 128, 64, 16, 16, 32, 32>(layer2_0_bn_sw_sc_bp_out, layer2_0_conv_sc_weight, layer2_0_conv_sc_bp_out, 2);
+	conv_1x1_sw_bp<BATCH_SIZE, 128, 64, 16, 16, 32, 32>(layer2_0_bn_sw_sc_bp_out, layer2_0_conv_sc_weight_rot, layer2_0_conv_sc_bp_out, 2);
 	shortcut_sw<BATCH_SIZE, 64, 32, 32>(layer2_0_conv_sc_bp_out, layer2_0_conv1_bp_out, layer2_0_shortcut_bp_out);
 
 	////////////////////////////////////
@@ -1195,21 +1226,21 @@ void backward(float error[BATCH_SIZE][10]) // right size ?
 	// layer 1_1
 	relu_bp_sw<BATCH_SIZE, 64, 32, 32>(layer2_0_shortcut_bp_out, layer1_1_bn2_out, layer1_1_relu2_bp_out);
 	bn_bp_sw<BATCH_SIZE, 64, 32, 32>(layer1_1_relu2_bp_out, layer1_1_conv2_out, layer1_1_bn2_bp_out, layer1_1_bn2_weight, layer1_1_bn2_weight_act, layer1_1_bn2_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 64, 64, 32, 32, 32, 32>(layer1_1_bn2_bp_out, layer1_1_conv2_weight, layer1_1_conv2_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 64, 64, 32, 32, 32, 32>(layer1_1_bn2_bp_out, layer1_1_conv2_weight_rot, layer1_1_conv2_bp_out, 1);
 
 	relu_bp_sw<BATCH_SIZE, 64, 32, 32>(layer1_1_conv2_bp_out, layer1_1_bn1_out, layer1_1_relu1_bp_out);
 	bn_bp_sw<BATCH_SIZE, 64, 32, 32>(layer1_1_relu1_bp_out, layer1_1_conv1_out, layer1_1_bn1_bp_out, layer1_1_bn1_weight, layer1_1_bn1_weight_act, layer1_1_bn1_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 64, 64, 32, 32, 32, 32>(layer1_1_bn1_bp_out, layer1_1_conv1_weight, layer1_1_conv1_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 64, 64, 32, 32, 32, 32>(layer1_1_bn1_bp_out, layer1_1_conv1_weight_rot, layer1_1_conv1_bp_out, 1);
 	shortcut_sw<BATCH_SIZE, 64, 32, 32>(layer1_1_conv1_bp_out, layer2_0_shortcut_bp_out, layer1_1_shortcut_bp_out);
 
 	// layer 1_0
 	relu_bp_sw<BATCH_SIZE, 64, 32, 32>(layer1_1_shortcut_bp_out, layer1_0_bn2_out, layer1_0_relu2_bp_out);
 	bn_bp_sw<BATCH_SIZE, 64, 32, 32>(layer1_0_relu2_bp_out, layer1_0_conv2_out, layer1_0_bn2_bp_out, layer1_0_bn2_weight, layer1_0_bn2_weight_act, layer1_0_bn2_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 64, 64, 32, 32, 32, 32>(layer1_0_bn2_bp_out, layer1_0_conv2_weight, layer1_0_conv2_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 64, 64, 32, 32, 32, 32>(layer1_0_bn2_bp_out, layer1_0_conv2_weight_rot, layer1_0_conv2_bp_out, 1);
 
 	relu_bp_sw<BATCH_SIZE, 64, 32, 32>(layer1_0_conv2_bp_out, layer1_0_bn1_out, layer1_0_relu1_bp_out);
 	bn_bp_sw<BATCH_SIZE, 64, 32, 32>(layer1_0_relu1_bp_out, layer1_0_conv1_out, layer1_0_bn1_bp_out, layer1_0_bn1_weight, layer1_0_bn1_weight_act, layer1_0_bn1_bias_act);
-	conv_3x3_sw_bp<BATCH_SIZE, 64, 64, 32, 32, 32, 32>(layer1_0_bn1_bp_out, layer1_0_conv1_weight, layer1_0_conv1_bp_out, 1);
+	conv_3x3_sw_bp<BATCH_SIZE, 64, 64, 32, 32, 32, 32>(layer1_0_bn1_bp_out, layer1_0_conv1_weight_rot, layer1_0_conv1_bp_out, 1);
 	shortcut_sw<BATCH_SIZE, 64, 32, 32>(layer1_0_conv1_bp_out, layer1_1_shortcut_bp_out, layer1_0_shortcut_bp_out);
 
 	// conv + bn_sw + relu_sw
@@ -1222,7 +1253,7 @@ void backward(float error[BATCH_SIZE][10]) // right size ?
 //--------------------
 //  Gradient GeMM
 //--------------------
-
+/*
 void gradient(float error[BATCH_SIZE][512][10]) 
 {
 	////////////////////////////////////
@@ -1233,13 +1264,13 @@ void gradient(float error[BATCH_SIZE][512][10])
 	// layer 4_1
 	conv_3x3_sw_grad<BATCH_SIZE, 512, 512, 4, 4, 3, 3, 4>(layer4_1_relu1_out, layer4_1_bn2_bp_out, layer4_1_conv2_grad, 1);
 	conv_3x3_sw_grad<BATCH_SIZE, 512, 512, 4, 4, 3, 3, 4>(layer4_0_shortcut_out, layer4_1_bn1_bp_out, layer4_1_conv1_grad, 1);
-		/* weight update (conv & bn_sw) */
-	layer4_1_conv2_weight   = layer4_1_conv2_weight   - lr * layer4_1_conv2_grad;
-	// layer4_1_bn2_weight     = layer4_1_bn2_weight     - lr * layer4_1_bn2_weight_act;
-	// layer4_1_bn2_bias       = layer4_1_bn2_bias       - lr * layer4_1_bn2_bias_act;
-	layer4_1_conv1_weight   = layer4_1_conv1_weight   - lr * layer4_1_conv1_grad;
-	// layer4_1_bn1_weight     = layer4_1_bn1_weight     - lr * layer4_1_bn1_weight_act;
-	// layer4_1_bn1_bias       = layer4_1_bn1_bias       - lr * layer4_1_bn1_bias_act;
+		// weight update (conv & bn_sw)
+	layer4_1_conv2_weight   = layer4_1_conv2_weight   - 0.01 * layer4_1_conv2_grad;
+	// layer4_1_bn2_weight     = layer4_1_bn2_weight     - 0.01 * layer4_1_bn2_weight_act;
+	// layer4_1_bn2_bias       = layer4_1_bn2_bias       - 0.01 * layer4_1_bn2_bias_act;
+	layer4_1_conv1_weight   = layer4_1_conv1_weight   - 0.01 * layer4_1_conv1_grad;
+	// layer4_1_bn1_weight     = layer4_1_bn1_weight     - 0.01 * layer4_1_bn1_weight_act;
+	// layer4_1_bn1_bias       = layer4_1_bn1_bias       - 0.01 * layer4_1_bn1_bias_act;
 
 	// layer 4 upsample (conv1_bp & conv_sc_bp stride=2)
 	// layer 4_0
@@ -1247,16 +1278,16 @@ void gradient(float error[BATCH_SIZE][512][10])
 	conv_3x3_sw_grad<BATCH_SIZE, 256, 512, 8, 8, 3, 3, 4>(layer3_1_shortcut_out, layer4_0_bn1_bp_out, layer4_0_conv1_grad, 2);
 	// shortcut_sw bn_sw + conv_1x1
 	conv_1x1_sw_grad<BATCH_SIZE, 256, 512, 8, 8, 1, 1, 4>(layer3_1_shortcut_out, layer4_0_bn_sw_sc_bp_out, layer4_0_conv_sc_grad, 2);
-		/* weight update (conv & bn_sw & sc) */
-	layer4_0_conv_sc_weight = layer4_0_conv_sc_weight - lr * layer4_0_conv_sc_grad;
-	// layer4_0_bn_sc_weight   = layer4_0_bn_sc_weight   - lr * layer4_0_bn_sc_weight;
-	// layer4_0_bn_sc_bias		= layer4_0_bn_sc_bias     - lr * layer4_0_bn_sc_bias;
-	layer4_0_conv2_weight   = layer4_0_conv2_weight   - lr * layer4_0_conv2_grad;
-	// layer4_0_bn2_weight     = layer4_0_bn2_weight     - lr * layer4_0_bn2_weight_act;
-	// layer4_0_bn2_bias       = layer4_0_bn2_bias       - lr * layer4_0_bn2_bias_act;
-	layer4_0_conv1_weight   = layer4_0_conv1_weight   - lr * layer4_0_conv1_grad;
-	// layer4_0_bn1_weight     = layer4_0_bn1_weight     - lr * layer4_0_bn1_weight_act;
-	// layer4_0_bn1_bias       = layer4_0_bn1_bias       - lr * layer4_0_bn1_bias_act;
+		// weight update (conv & bn_sw & sc)
+	layer4_0_conv_sc_weight = layer4_0_conv_sc_weight - 0.01 * layer4_0_conv_sc_grad;
+	// layer4_0_bn_sc_weight   = layer4_0_bn_sc_weight   - 0.01 * layer4_0_bn_sc_weight;
+	// layer4_0_bn_sc_bias		= layer4_0_bn_sc_bias     - 0.01 * layer4_0_bn_sc_bias;
+	layer4_0_conv2_weight   = layer4_0_conv2_weight   - 0.01 * layer4_0_conv2_grad;
+	// layer4_0_bn2_weight     = layer4_0_bn2_weight     - 0.01 * layer4_0_bn2_weight_act;
+	// layer4_0_bn2_bias       = layer4_0_bn2_bias       - 0.01 * layer4_0_bn2_bias_act;
+	layer4_0_conv1_weight   = layer4_0_conv1_weight   - 0.01 * layer4_0_conv1_grad;
+	// layer4_0_bn1_weight     = layer4_0_bn1_weight     - 0.01 * layer4_0_bn1_weight_act;
+	// layer4_0_bn1_bias       = layer4_0_bn1_bias       - 0.01 * layer4_0_bn1_bias_act;
 
 	////////////////////////////////////
 	///////// LAYER 3 gradient /////////
@@ -1265,13 +1296,13 @@ void gradient(float error[BATCH_SIZE][512][10])
 	// layer 3_1
 	conv_3x3_sw_grad<BATCH_SIZE, 256, 256, 8, 8, 3, 3, 8>(layer3_1_relu1_out, layer3_1_bn2_bp_out, layer3_1_conv2_grad, 1);
 	conv_3x3_sw_grad<BATCH_SIZE, 256, 256, 8, 8, 3, 3, 8>(layer3_0_shortcut_out, layer3_1_bn1_bp_out, layer3_1_conv1_grad, 1);
-		/* weight update (conv & bn_sw) */
-	layer3_1_conv2_weight   = layer3_1_conv2_weight   - lr * layer3_1_conv2_grad;
-	// layer3_1_bn2_weight     = layer3_1_bn2_weight     - lr * layer3_1_bn2_weight_act;
-	// layer3_1_bn2_bias       = layer3_1_bn2_bias       - lr * layer3_1_bn2_bias_act;
-	layer3_1_conv1_weight   = layer3_1_conv1_weight   - lr * layer3_1_conv1_grad;
-	// layer3_1_bn1_weight     = layer3_1_bn1_weight     - lr * layer3_1_bn1_weight_act;
-	// layer3_1_bn1_bias       = layer3_1_bn1_bias       - lr * layer3_1_bn1_bias_act;
+		// weight update (conv & bn_sw)
+	layer3_1_conv2_weight   = layer3_1_conv2_weight   - 0.01 * layer3_1_conv2_grad;
+	// layer3_1_bn2_weight     = layer3_1_bn2_weight     - 0.01 * layer3_1_bn2_weight_act;
+	// layer3_1_bn2_bias       = layer3_1_bn2_bias       - 0.01 * layer3_1_bn2_bias_act;
+	layer3_1_conv1_weight   = layer3_1_conv1_weight   - 0.01 * layer3_1_conv1_grad;
+	// layer3_1_bn1_weight     = layer3_1_bn1_weight     - 0.01 * layer3_1_bn1_weight_act;
+	// layer3_1_bn1_bias       = layer3_1_bn1_bias       - 0.01 * layer3_1_bn1_bias_act;
 
 	// layer 3 upsample (conv1_bp & conv_sc_bp stride=2)
 	// layer 3_0
@@ -1279,16 +1310,16 @@ void gradient(float error[BATCH_SIZE][512][10])
 	conv_3x3_sw_grad<BATCH_SIZE, 128, 256, 16, 16, 3, 3, 8>(layer2_1_shortcut_out, layer3_0_bn1_bp_out, layer3_0_conv1_grad, 2);
 	// shortcut_sw bn_sw + conv_1x1
 	conv_1x1_sw_grad<BATCH_SIZE, 128, 256, 16, 16, 1, 1, 8>(layer2_1_shortcut_out, layer3_0_bn_sw_sc_bp_out, layer3_0_conv_sc_grad, 2);
-		/* weight update (conv & bn_sw & sc) */
-	layer3_0_conv_sc_weight = layer4_0_conv_sc_weight - lr * layer4_0_conv_sc_grad;
-	// layer3_0_bn_sc_weight   = layer4_0_bn_sc_weight   - lr * layer4_0_bn_sc_weight;
-	// layer3_0_bn_sc_bias		= layer4_0_bn_sc_bias     - lr * layer4_0_bn_sc_bias;
-	layer3_0_conv2_weight   = layer4_0_conv2_weight   - lr * layer4_0_conv2_grad;
-	// layer3_0_bn2_weight     = layer4_0_bn2_weight     - lr * layer4_0_bn2_weight_act;
-	// layer3_0_bn2_bias       = layer4_0_bn2_bias       - lr * layer4_0_bn2_bias_act;
-	layer3_0_conv1_weight   = layer4_0_conv1_weight   - lr * layer4_0_conv1_grad;
-	// layer3_0_bn1_weight     = layer4_0_bn1_weight     - lr * layer4_0_bn1_weight_act;
-	// layer3_0_bn1_bias       = layer4_0_bn1_bias       - lr * layer4_0_bn1_bias_act;
+		// weight update (conv & bn_sw & sc)
+	layer3_0_conv_sc_weight = layer4_0_conv_sc_weight - 0.01 * layer4_0_conv_sc_grad;
+	// layer3_0_bn_sc_weight   = layer4_0_bn_sc_weight   - 0.01 * layer4_0_bn_sc_weight;
+	// layer3_0_bn_sc_bias		= layer4_0_bn_sc_bias     - 0.01 * layer4_0_bn_sc_bias;
+	layer3_0_conv2_weight   = layer4_0_conv2_weight   - 0.01 * layer4_0_conv2_grad;
+	// layer3_0_bn2_weight     = layer4_0_bn2_weight     - 0.01 * layer4_0_bn2_weight_act;
+	// layer3_0_bn2_bias       = layer4_0_bn2_bias       - 0.01 * layer4_0_bn2_bias_act;
+	layer3_0_conv1_weight   = layer4_0_conv1_weight   - 0.01 * layer4_0_conv1_grad;
+	// layer3_0_bn1_weight     = layer4_0_bn1_weight     - 0.01 * layer4_0_bn1_weight_act;
+	// layer3_0_bn1_bias       = layer4_0_bn1_bias       - 0.01 * layer4_0_bn1_bias_act;
 
 	////////////////////////////////////
 	///////// LAYER 2 gradient /////////
@@ -1297,13 +1328,13 @@ void gradient(float error[BATCH_SIZE][512][10])
 	// layer 2_1
 	conv_3x3_sw_grad<BATCH_SIZE, 128, 128, 16, 16, 3, 3, 16>(layer2_1_relu1_out, layer2_1_bn2_bp_out, layer2_1_conv2_grad, 1);
 	conv_3x3_sw_grad<BATCH_SIZE, 128, 128, 16, 16, 3, 3, 16>(layer2_0_shortcut_out, layer2_1_bn1_bp_out, layer2_1_conv1_grad, 1);
-		/* weight update (conv & bn_sw) */
-	layer2_1_conv2_weight   = layer2_1_conv2_weight   - lr * layer2_1_conv2_grad;
-	// layer2_1_bn2_weight     = layer2_1_bn2_weight     - lr * layer2_1_bn2_weight_act;
-	// layer2_1_bn2_bias       = layer2_1_bn2_bias       - lr * layer2_1_bn2_bias_act;
-	layer2_1_conv1_weight   = layer2_1_conv1_weight   - lr * layer2_1_conv1_grad;
-	// layer2_1_bn1_weight     = layer2_1_bn1_weight     - lr * layer2_1_bn1_weight_act;
-	// layer2_1_bn1_bias       = layer2_1_bn1_bias       - lr * layer2_1_bn1_bias_act;
+		// weight update (conv & bn_sw)
+	layer2_1_conv2_weight   = layer2_1_conv2_weight   - 0.01 * layer2_1_conv2_grad;
+	// layer2_1_bn2_weight     = layer2_1_bn2_weight     - 0.01 * layer2_1_bn2_weight_act;
+	// layer2_1_bn2_bias       = layer2_1_bn2_bias       - 0.01 * layer2_1_bn2_bias_act;
+	layer2_1_conv1_weight   = layer2_1_conv1_weight   - 0.01 * layer2_1_conv1_grad;
+	// layer2_1_bn1_weight     = layer2_1_bn1_weight     - 0.01 * layer2_1_bn1_weight_act;
+	// layer2_1_bn1_bias       = layer2_1_bn1_bias       - 0.01 * layer2_1_bn1_bias_act;
 
 	// layer 2 upsample (conv1_bp & conv_sc_bp stride=2)
 	// layer 2_0
@@ -1311,16 +1342,16 @@ void gradient(float error[BATCH_SIZE][512][10])
 	conv_3x3_sw_grad<BATCH_SIZE, 64, 128, 32, 32, 3, 3, 16>(layer1_1_shortcut_out, layer2_0_bn1_bp_out, layer2_0_conv1_grad, 2);
 	// shortcut_sw bn_sw + conv_1x1
 	conv_1x1_sw_grad<BATCH_SIZE, 64, 128, 32, 32, 1, 1, 16>(layer1_1_shortcut_out, layer2_0_bn_sw_sc_bp_out, layer2_0_conv_sc_grad, 2);
-		/* weight update (conv & bn_sw & sc) */
-	layer2_0_conv_sc_weight = layer2_0_conv_sc_weight - lr * layer2_0_conv_sc_grad;
-	// layer2_0_bn_sc_weight   = layer2_0_bn_sc_weight   - lr * layer2_0_bn_sc_weight;
-	// layer2_0_bn_sc_bias		= layer2_0_bn_sc_bias     - lr * layer2_0_bn_sc_bias;
-	layer2_0_conv2_weight   = layer2_0_conv2_weight   - lr * layer2_0_conv2_grad;
-	// layer2_0_bn2_weight     = layer2_0_bn2_weight     - lr * layer2_0_bn2_weight_act;
-	// layer2_0_bn2_bias       = layer2_0_bn2_bias       - lr * layer2_0_bn2_bias_act;
-	layer2_0_conv1_weight   = layer2_0_conv1_weight   - lr * layer2_0_conv1_grad;
-	// layer2_0_bn1_weight     = layer2_0_bn1_weight     - lr * layer2_0_bn1_weight_act;
-	// layer2_0_bn1_bias       = layer2_0_bn1_bias       - lr * layer2_0_bn1_bias_act;
+		// weight update (conv & bn_sw & sc)
+	layer2_0_conv_sc_weight = layer2_0_conv_sc_weight - 0.01 * layer2_0_conv_sc_grad;
+	// layer2_0_bn_sc_weight   = layer2_0_bn_sc_weight   - 0.01 * layer2_0_bn_sc_weight;
+	// layer2_0_bn_sc_bias		= layer2_0_bn_sc_bias     - 0.01 * layer2_0_bn_sc_bias;
+	layer2_0_conv2_weight   = layer2_0_conv2_weight   - 0.01 * layer2_0_conv2_grad;
+	// layer2_0_bn2_weight     = layer2_0_bn2_weight     - 0.01 * layer2_0_bn2_weight_act;
+	// layer2_0_bn2_bias       = layer2_0_bn2_bias       - 0.01 * layer2_0_bn2_bias_act;
+	layer2_0_conv1_weight   = layer2_0_conv1_weight   - 0.01 * layer2_0_conv1_grad;
+	// layer2_0_bn1_weight     = layer2_0_bn1_weight     - 0.01 * layer2_0_bn1_weight_act;
+	// layer2_0_bn1_bias       = layer2_0_bn1_bias       - 0.01 * layer2_0_bn1_bias_act;
 
 	////////////////////////////////////
 	///////// LAYER 1 gradient /////////
@@ -1329,33 +1360,33 @@ void gradient(float error[BATCH_SIZE][512][10])
 	// layer 1_1
 	conv_3x3_sw_grad<BATCH_SIZE, 64, 64, 32, 32, 3, 3, 32>(layer1_1_relu1_out, layer1_1_bn2_bp_out, layer1_1_conv2_grad, 1);
 	conv_3x3_sw_grad<BATCH_SIZE, 64, 64, 32, 32, 3, 3, 32>(layer1_0_shortcut_out, layer1_1_bn1_bp_out, layer1_1_conv1_grad, 1);
-		/* weight update (conv & bn_sw) */
-	layer1_1_conv2_weight   = layer1_1_conv2_weight   - lr * layer1_1_conv2_grad;
-	// layer1_1_bn2_weight     = layer1_1_bn2_weight     - lr * layer1_1_bn2_weight_act;
-	// layer1_1_bn2_bias       = layer1_1_bn2_bias       - lr * layer1_1_bn2_bias_act;
-	layer1_1_conv1_weight   = layer1_1_conv1_weight   - lr * layer1_1_conv1_grad;
-	// layer1_1_bn1_weight     = layer1_1_bn1_weight     - lr * layer1_1_bn1_weight_act;
-	// layer1_1_bn1_bias       = layer1_1_bn1_bias       - lr * layer1_1_bn1_bias_act;
+		// weight update (conv & bn_sw)
+	layer1_1_conv2_weight   = layer1_1_conv2_weight   - 0.01 * layer1_1_conv2_grad;
+	// layer1_1_bn2_weight     = layer1_1_bn2_weight     - 0.01 * layer1_1_bn2_weight_act;
+	// layer1_1_bn2_bias       = layer1_1_bn2_bias       - 0.01 * layer1_1_bn2_bias_act;
+	layer1_1_conv1_weight   = layer1_1_conv1_weight   - 0.01 * layer1_1_conv1_grad;
+	// layer1_1_bn1_weight     = layer1_1_bn1_weight     - 0.01 * layer1_1_bn1_weight_act;
+	// layer1_1_bn1_bias       = layer1_1_bn1_bias       - 0.01 * layer1_1_bn1_bias_act;
 
 	// layer 1_0
 	conv_3x3_sw_grad<BATCH_SIZE, 64, 64, 32, 32, 3, 3, 32>(layer1_0_relu1_out, layer1_0_bn2_bp_out, layer1_0_conv2_grad, 1);
 	conv_3x3_sw_grad<BATCH_SIZE, 64, 64, 32, 32, 3, 3, 32>(relu1_out, layer1_0_bn1_bp_out, layer1_0_conv1_grad, 1);
-		/* weight update (conv & bn_sw) */
-	layer1_0_conv2_weight   = layer1_0_conv2_weight   - lr * layer1_0_conv2_grad;
-	// layer1_0_bn2_weight     = layer1_0_bn2_weight     - lr * layer1_0_bn2_weight_act;
-	// layer1_0_bn2_bias       = layer1_0_bn2_bias       - lr * layer1_0_bn2_bias_act;
-	layer1_0_conv1_weight   = layer1_0_conv1_weight   - lr * layer1_0_conv1_grad;
-	// layer1_0_bn1_weight     = layer1_0_bn1_weight     - lr * layer1_0_bn1_weight_act;
-	// layer1_0_bn1_bias       = layer1_0_bn1_bias       - lr * layer1_0_bn1_bias_act;
+		// weight update (conv & bn_sw)
+	layer1_0_conv2_weight   = layer1_0_conv2_weight   - 0.01 * layer1_0_conv2_grad;
+	// layer1_0_bn2_weight     = layer1_0_bn2_weight     - 0.01 * layer1_0_bn2_weight_act;
+	// layer1_0_bn2_bias       = layer1_0_bn2_bias       - 0.01 * layer1_0_bn2_bias_act;
+	layer1_0_conv1_weight   = layer1_0_conv1_weight   - 0.01 * layer1_0_conv1_grad;
+	// layer1_0_bn1_weight     = layer1_0_bn1_weight     - 0.01 * layer1_0_bn1_weight_act;
+	// layer1_0_bn1_bias       = layer1_0_bn1_bias       - 0.01 * layer1_0_bn1_bias_act;
 
 	// conv + bn_sw + relu_sw
 	conv_3x3_sw_grad<BATCH_SIZE, 3, 64, 32, 32, 3, 3, 32>(image, bn1_bp_out, conv1_grad, 1);
-		/* weight update (conv & bn_sw) */
-	conv1_weight            = conv1_weight            - lr * conv1_weight;
-	// bn1_weight              = bn1_weight              - lr * bn1_weight;
-	// bn1_bias                = bn1_bias                - lr * bn1_bias;
+		// weight update (conv & bn_sw)
+	conv1_weight            = conv1_weight            - 0.01 * conv1_weight;
+	// bn1_weight              = bn1_weight              - 0.01 * bn1_weight;
+	// bn1_bias                = bn1_bias                - 0.01 * bn1_bias;
 }
-
+*/
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1365,16 +1396,19 @@ void gradient(float error[BATCH_SIZE][512][10])
 //#define SW_TEST
 int main(int argc, char **argv)
 {
-	int16 image_hw[4][3][32][32] = {0};
+	int8 image_hw[4][3][32][32] = {0};
 
 		for(int j = 0; j < 3; j ++){
 			for(int row = 0; row < 32; row ++){
 				for(int col = 0; col < 32; col ++){
 					for(int b = 0; b < 4; b ++){
-						image_hw[b][j][row][col] = 1;
+						image_hw[b][j][row][col] = image[b][j][row][col];
 					}
 				}
 			}
 		}
-	FracNet_T(image_hw, output, weight_3x3_updated, weight_1x1_updated);
+	FracNet_T(image_hw, output,
+			  conv_3x3_weight_all, conv_1x1_weight_all,
+			  msb_fmap, lsb_fmap,
+			  out_buf_t0, out_buf_t1);
 }

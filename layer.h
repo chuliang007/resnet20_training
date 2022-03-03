@@ -14,10 +14,63 @@
 //   Utils Function
 //--------------------
 
+// input activation loading from DRAM
+/*
+void load_fmap(
+	int8 msb_fmap[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
+	int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// fmap in DDR
+	int fmap_ptr
+)
+{
+	for (int b = 0; b < BATCH_SIZE; b ++) {
+		for (int c_in = 0; c_in < CHANNEL_IN_T; c_in ++){
+			for (int row = 0; row < 3; row ++) {
+				for (int col = 0; col < 3; col ++) {
+					msb_fmap[b][c_in][row][col] = out_buf_t0[fmap_ptr][b][c_in][row][col];
+				}
+			}
+		}
+	}
+}
+*/
+
+// conv weight loading from DRAM
+void load_conv_3x3_weights(
+	int8 weight_3x3_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
+	int8 conv_3x3_weight_all[NUM_3x3_WT][CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
+	int conv_3x3_weight_ptr
+)
+{
+	// 'conv_3x3_weight_ptr' to indicate 'CHANNEL_OUT_T'
+	for (int c_out = 0; c_out < CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < CHANNEL_IN_T; c_in ++){
+			for (int row = 0; row < 3; row ++) {
+				for (int col = 0; col < 3; col ++) {
+					weight_3x3_tile_buffer[c_out][c_in][row][col] = conv_3x3_weight_all[conv_3x3_weight_ptr][c_out][c_in][row][col];
+				}
+			}
+		}
+	}
+}
+
+void load_conv_1x1_weights(
+	int8 weight_1x1_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T],
+	int8 conv_1x1_weight_all[NUM_3x3_WT][CHANNEL_OUT_T][CHANNEL_IN_T],
+	int conv_1x1_weight_ptr
+)
+{
+	// 'conv_1x1_weight_ptr' to indicate 'CHANNEL_OUT_T'
+	for (int c_out = 0; c_out < CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < CHANNEL_IN_T; c_in ++){
+			weight_1x1_tile_buffer[c_out][c_in] = conv_1x1_weight_all[conv_1x1_weight_ptr][c_out][c_in];
+		}
+	}
+}
+
 // rot180 for Conv weights
 void rot180_3x3(
-	int16 mat[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],			// in
-	int16 out_buf[CHANNEL_OUT_T][CHANNEL_IN_T][3][3]		// out, mat_rot180
+	int8 mat[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],			// in
+	int8 out_buf[CHANNEL_OUT_T][CHANNEL_IN_T][3][3]			// out, mat_rot180
 )
 {
 	for (int n = 0; n < CHANNEL_OUT_T; n ++) {
@@ -32,8 +85,8 @@ void rot180_3x3(
 }
 
 void rot180_1x1(
-	int16 mat[CHANNEL_OUT_T][CHANNEL_IN_T], //[1][1],			// in
-	int16 out_buf[CHANNEL_OUT_T][CHANNEL_IN_T]	//[1][1]		// out, mat_rot180
+	int8 mat[CHANNEL_OUT_T][CHANNEL_IN_T], 					// in
+	int8 out_buf[CHANNEL_OUT_T][CHANNEL_IN_T]				// out, mat_rot180
 )
 {
 	for (int n = 0; n < CHANNEL_OUT_T; n ++) {
@@ -45,18 +98,18 @@ void rot180_1x1(
 
 // Batch Norm
 void bn(
-	int16 bn_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int16 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, bn_outputs
+	int8 bn_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
+	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, bn_outputs
 
-	float gamma[CHANNEL_OUT_T],
-	float beta[CHANNEL_OUT_T],
+	int8 gamma[CHANNEL_OUT_T],
+	int8 beta[CHANNEL_OUT_T],
 
     int H_fmap
 )
 {
     int N = BATCH_SIZE * WIDTH * WIDTH;
-	float mu[CHANNEL_OUT_T];
-	float sigma[CHANNEL_OUT_T];
+	int8 mu[CHANNEL_OUT_T];
+	int8 sigma[CHANNEL_OUT_T];
     // calc mean
     for (int n = 0; n < BATCH_SIZE; n ++) {
         for (int c = 0; c < CHANNEL_OUT_T; c ++) {
@@ -95,20 +148,20 @@ void bn(
 
 // Batch Norm Back-prop
 void bn_bp(
-	int16 error[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH], 			// in
-	int16 bn_inputs_fw[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// in
-	int16 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, error_bn
+	int8 error[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH], 			// in
+	int8 bn_inputs_fw[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
+	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, error_bn
 
-	float gamma[CHANNEL_OUT_T],										// in
-	int16 g_gamma[CHANNEL_OUT_T],									// out
-	int16 g_beta[CHANNEL_OUT_T],									// out
+	int8 gamma[CHANNEL_OUT_T],										// in
+	int8 g_gamma[CHANNEL_OUT_T],									// out
+	int8 g_beta[CHANNEL_OUT_T],										// out
 
 	int H_fmap
 )
 {
     int N = BATCH_SIZE * WIDTH * WIDTH;
-	float mu[CHANNEL_OUT_T];
-	float sigma[CHANNEL_OUT_T];
+	int8 mu[CHANNEL_OUT_T];
+	int8 sigma[CHANNEL_OUT_T];
 	// calc mean
     for (int n = 0; n < BATCH_SIZE; n ++){
         for (int c = 0; c < CHANNEL_OUT_T; c ++){
@@ -158,8 +211,8 @@ void bn_bp(
 
 // ReLu
 void relu(
-	int16 input[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],     // in
-	int16 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],   // out
+	int8 input[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],     // in
+	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],   // out
 	int H_fmap
 )
 {
@@ -180,9 +233,9 @@ void relu(
 
 // ReLu Back-prop
 void relu_bp(
-	int16 error[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],  			// error in
-	int16 input_fw[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH], 		// activation in foward
-	int16 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],    		// error out, error_relu
+	int8 error[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],  			// error in
+	int8 input_fw[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH], 		// activation in foward
+	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],    		// error out, error_relu
 	int H_fmap
 )
 {
@@ -203,8 +256,8 @@ void relu_bp(
 
 // AvgPool
 void avgpool(
-	int16 avg_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int16 out_buf[BATCH_SIZE][CHANNEL_OUT_T], 						// out, avg_outputs
+	int8 avg_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
+	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T], 						// out, avg_outputs
 
 	int stride,
 	int H_fmap
@@ -212,7 +265,7 @@ void avgpool(
 {
 	int H_fmap_OUT = H_fmap/stride;
 	int stride2 = stride*stride;
-	int16 accum;
+	int8 accum;
 
 	for (int n = 0; n < BATCH_SIZE; n ++) {
 		for (int c = 0; c < CHANNEL_OUT_T; c ++) {
@@ -233,8 +286,8 @@ void avgpool(
 
 // AvgPool Back-prop
 void avgpool_bp(
-	int16 error[BATCH_SIZE][CHANNEL_OUT_T],							// in
-	int16 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, error_avg
+	int8 error[BATCH_SIZE][CHANNEL_OUT_T],							// in
+	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, error_avg
 	int stride
 	// int H_fmap	// #(-1,512,1,1)
 )
@@ -255,9 +308,9 @@ void avgpool_bp(
 
 // FC (no bias)
 void FC(
-	int16 inputs[BATCH_SIZE][CHANNEL_OUT_T],
-	int16 linear_weight[10][CHANNEL_OUT_T],
-	int16 outputs[BATCH_SIZE][10]
+	int8 inputs[BATCH_SIZE][CHANNEL_OUT_T],
+	int8 linear_weight[10][CHANNEL_OUT_T],
+	int8 outputs[BATCH_SIZE][10]
 )
 {
 	for (int bii = 0; bii < BATCH_SIZE; bii++) {
@@ -271,9 +324,9 @@ void FC(
 
 // FC Back-prop (no bias)
 void FC_bp(
-	int16 inputs[BATCH_SIZE][10],
-	int16 linear_weight_transpose[CHANNEL_OUT_T][10],
-	int16 outputs[BATCH_SIZE][CHANNEL_OUT_T]
+	int8 inputs[BATCH_SIZE][10],
+	int8 linear_weight_transpose[CHANNEL_OUT_T][10],
+	int8 outputs[BATCH_SIZE][CHANNEL_OUT_T]
 )
 {
 	for (int bii = 0; bii < BATCH_SIZE; bii++) {
@@ -287,14 +340,14 @@ void FC_bp(
 
 // Shortcut- identity branch
 void shortcut(
-	int16 input_a[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// in1
-	int16 input_b[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// in2
-	int16 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out
+	int8 input_a[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// in1
+	int8 input_b[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// in2
+	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out
 	int H_fmap
 )
 {
-	// int16 out_feature_a[BATCH_SIZE][CHANNEL_OUT_T];
-	// int16 out_feature_b[BATCH_SIZE][CHANNEL_OUT_T];
+	// int8 out_feature_a[BATCH_SIZE][CHANNEL_OUT_T];
+	// int8 out_feature_b[BATCH_SIZE][CHANNEL_OUT_T];
 	for (int n = 0; n < BATCH_SIZE; n ++) {
 		for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 			for (int row = 0; row < H_fmap; row ++) {
@@ -316,9 +369,9 @@ void shortcut(
 // Conv_3x3, padding=1
 void conv_3x3
 (
-	int16 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
-	int16 weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	int16 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
+	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
+	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
+	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
 	
 	int stride,
 	int ch_in,
@@ -333,19 +386,17 @@ void conv_3x3
 		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 			for (int row = 0; row < H_fmap_out; row ++) {
 				for (int col = 0; col < H_fmap_out; col ++) {
-					int16 accum = 0;
 					for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 						for (int krow = 0; krow < 3; krow ++) {
 							for (int kcol = 0; kcol < 3; kcol ++) {
 								int row_in = row*stride + krow - 1;		// -1 due to 0-padding
 								int col_in = col*stride + kcol - 1;
 								if (row_in >= 0 && row_in < H_fmap_in && col_in >= 0 && col_in < H_fmap_in) {
-									accum += input[bi][ci][row_in][col_in] * weight[co][ci][krow][kcol];
+									output[bi][co][row][col] += input[bi][ci][row_in][col_in] * weight[co][ci][krow][kcol];
 								}
 							}
 						}
 					}
-					output[bi][co][row][col] = accum;
 				}
 			}
 		}
@@ -355,9 +406,9 @@ void conv_3x3
 // Conv_1x1, padding=0
 void conv_1x1
 (
-	int16 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
-	int16 weight[CHANNEL_OUT_T][CHANNEL_IN_T], //[1][1],
-	int16 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
+	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
+	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T], //[1][1],
+	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
 
 	int stride,
 	int ch_in,
@@ -370,15 +421,13 @@ void conv_1x1
 		for (int co = 0; co < CHANNEL_OUT_T; co++) {
 			for (int row = 0; row < H_fmap_out; row++) {
 				for (int col = 0; col < H_fmap_out; col++) {
-					int16 accum = 0;
 					for (int ci = 0; ci < CHANNEL_IN_T; ci++) {
 						int row_in = row*stride;	// krow = kcol = 0
 						int col_in = col*stride;
 						if (row_in >= 0 && row_in < H_fmap_in && col_in >= 0 && col_in < H_fmap_in) {
-							accum += input[bi][ci][row_in][col_in] * weight[co][ci]; //[0][0];
+							output[bi][co][row][col] += input[bi][ci][row_in][col_in] * weight[co][ci]; //[0][0];
 						}
 					}
-					output[bi][co][row][col] = accum;
 				}
 			}
 		}
@@ -392,9 +441,9 @@ void conv_1x1
 // Conv_3x3, padding=1
 void conv_3x3_bp
 (
-	int16 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
-	int16 weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	int16 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
+	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
+	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
+	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
 
 	int stride,
 	int ch_in,
@@ -404,7 +453,7 @@ void conv_3x3_bp
 )
 {
 	// input dilation and 0-padding(1, 1+A, 1, 1+A)
-	int16 input_dil[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];
+	int8 input_dil[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];
 	for (int bi = 0; bi < BATCH_SIZE; bi++) {
 		for (int co = 0; co < CHANNEL_OUT_T; co++) {
 			for (int row = 0; row < H_fmap_in; row++) {
@@ -420,19 +469,17 @@ void conv_3x3_bp
 		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 			for (int row = 0; row < H_fmap_out; row ++) {
 				for (int col = 0; col < H_fmap_out; col ++) {
-					int16 accum = 0;
 					for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 						for (int krow = 0; krow < 3; krow ++) {
 							for (int kcol = 0; kcol < 3; kcol ++) {
 								int row_in = row + krow;	// stride 1 transposed conv
 								int col_in = col + kcol;
 								if (row_in >= 0 && row_in < H_fmap_in && col_in >= 0 && col_in < H_fmap_in) {
-									accum += input_dil[bi][ci][row_in][col_in] * weight[co][ci][krow][kcol];
+									output[bi][co][row][col] += input_dil[bi][ci][row_in][col_in] * weight[co][ci][krow][kcol];
 								}
 							}
 						}
 					}
-					output[bi][co][row][col] = accum;
 				}
 			}
 		}
@@ -442,9 +489,9 @@ void conv_3x3_bp
 // Conv_1x1, padding=0
 void conv_1x1_bp
 (
-	int16 input[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
-	int16 weight[CHANNEL_OUT_T][CHANNEL_OUT_T], //[1][1],
-	int16 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
+	int8 input[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
+	int8 weight[CHANNEL_OUT_T][CHANNEL_OUT_T], //[1][1],
+	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
 
 	int stride,
 	int ch_in,
@@ -454,7 +501,7 @@ void conv_1x1_bp
 )
 {
 	// input dilation
-	int16 input_dil[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];
+	int8 input_dil[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];
 	for (int bi = 0; bi < BATCH_SIZE; bi++) {
 		for (int co = 0; co < CHANNEL_OUT_T; co++) {
 			for (int row = 0; row < H_fmap_in; row++) {
@@ -470,13 +517,11 @@ void conv_1x1_bp
 		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 			for (int row = 0; row < H_fmap_out; row ++) {
 				for (int col = 0; col < H_fmap_out; col ++) {
-					int16 accum = 0;
 					for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 						int row_in = row;	// stride 1 transposed conv, krow = kcol = 0
 						int col_in = col;
-						accum += input_dil[bi][ci][row_in][col_in] * weight[co][ci]; //[0][0];
+						output[bi][co][row][col] += input_dil[bi][ci][row_in][col_in] * weight[co][ci]; //[0][0];
 					}
-					output[bi][co][row][col] = accum;
 				}
 			}
 		}
@@ -490,9 +535,9 @@ void conv_1x1_bp
 // Conv_3x3_grad, padding=1
 void conv_3x3_grad
 (
-	int16 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
-	int16 weight[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
-	int16 output[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
+	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
+	int8 weight[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
+	int8 output[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
 
 	int stride,
 	int ch_in,
@@ -503,7 +548,7 @@ void conv_3x3_grad
 {
 	// weight dilation, k_dil = 1 + (k-1)*s
 	int KERNEL_DIL = (k_row_in-1)*stride + 1;
-	int16 weight_dil[BATCH_SIZE][CHANNEL_OUT_T][2*WIDTH][2*WIDTH];	// larger buffer for dilated weights
+	int8 weight_dil[BATCH_SIZE][CHANNEL_OUT_T][2*WIDTH][2*WIDTH];	// larger buffer for dilated weights
 	for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 			for (int krow = 0; krow < k_row_in; krow ++) {
@@ -520,19 +565,17 @@ void conv_3x3_grad
 		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 			for (int row = 0; row < 3; row ++) {
 				for (int col = 0; col < 3; col ++) {
-					int16 accum = 0;
 					for (int bi = 0; bi < BATCH_SIZE; ci ++) {
 						for (int krow = 0; krow < KERNEL_DIL; krow ++) {
 							for (int kcol = 0; kcol < KERNEL_DIL; kcol ++) {
 								int row_in = row*stride + krow - 1;		// -1 due to 0-padding
 								int col_in = col*stride + kcol - 1;
 								if (row_in >= 0 && row_in < H_fmap_in && col_in >= 0 && col_in < H_fmap_in) {
-									accum += input[bi][ci][row_in][col_in] * weight_dil[bi][co][krow][kcol];
+									output[co][ci][row][col] += input[bi][ci][row_in][col_in] * weight_dil[bi][co][krow][kcol];
 								}
 							}
 						}
 					}
-					output[co][ci][row][col] = accum;
 				}
 			}
 		}
@@ -542,9 +585,9 @@ void conv_3x3_grad
 // Conv_1x1_grad, padding=0
 void conv_1x1_grad
 (
-	int16 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
-	int16 weight[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
-	int16 output[CHANNEL_OUT_T][CHANNEL_IN_T],
+	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
+	int8 weight[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
+	int8 output[CHANNEL_OUT_T][CHANNEL_IN_T],
 	
 	int stride,
 	int ch_in,
@@ -555,7 +598,7 @@ void conv_1x1_grad
 {
 	// weight dilation, k_dil = 1 + (k-1)*s
 	int KERNEL_DIL = (k_row_in-1)*stride + 1;
-	int16 weight_dil[BATCH_SIZE][CHANNEL_OUT_T][2*WIDTH][2*WIDTH];	// larger buffer for dilated weights
+	int8 weight_dil[BATCH_SIZE][CHANNEL_OUT_T][2*WIDTH][2*WIDTH];	// larger buffer for dilated weights
 	for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 			for (int krow = 0; krow < k_row_in; krow ++) {
@@ -570,17 +613,15 @@ void conv_1x1_grad
 	// conv
 	for (int co = 0; co < CHANNEL_OUT_T; co++) {
 		for (int ci = 0; ci < CHANNEL_IN_T; ci++) {
-			int16 accum = 0;
 			for (int bi = 0; bi < BATCH_SIZE; ci++) {
 				for (int krow = 0; krow < KERNEL_DIL; krow++) {
 					for (int kcol = 0; kcol < KERNEL_DIL; kcol++) {
 						if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in) {
-							accum += input[bi][ci][krow][kcol] * weight_dil[bi][co][krow][kcol];
+							output[co][ci] += input[bi][ci][krow][kcol] * weight_dil[bi][co][krow][kcol];
 						}
 					}
 				}
 			}
-			output[co][ci] = accum;
 		}
 	}
 }
@@ -588,9 +629,9 @@ void conv_1x1_grad
 // SGD conv_3x3 weight update
 void SGD_WU_3x3
 (
-	int16 gradient[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	int16 weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	int16 weight_WU[CHANNEL_OUT_T][CHANNEL_IN_T][3][3]
+	int8 gradient[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
+	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
+	int8 weight_WU[CHANNEL_OUT_T][CHANNEL_IN_T][3][3]
 )
 {
 	for (int co = 0; co < CHANNEL_OUT_T; co++) {
@@ -607,9 +648,9 @@ void SGD_WU_3x3
 // SGD conv_1x1 weight update
 void SGD_WU_1x1
 (
-	int16 gradient[CHANNEL_OUT_T][CHANNEL_IN_T],
-	int16 weight[CHANNEL_OUT_T][CHANNEL_IN_T],
-	int16 weight_WU[CHANNEL_OUT_T][CHANNEL_IN_T]
+	int8 gradient[CHANNEL_OUT_T][CHANNEL_IN_T],
+	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T],
+	int8 weight_WU[CHANNEL_OUT_T][CHANNEL_IN_T]
 )
 {
 	for (int co = 0; co < CHANNEL_OUT_T; co++) {
@@ -653,19 +694,19 @@ void get_image(unsigned char *images, unsigned int idx, float image[96][32][32])
 
 // Fused bn + relu
 void bn_relu(
-	int16 bn_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int16 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, bn_outputs
-	int1  relu_mask[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// out, relu_mask for relu_bp
+	int8 bn_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
+	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, bn_outputs
+	int1 relu_mask[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// out, relu_mask for relu_bp
 
-	float gamma[CHANNEL_OUT_T],
-	float beta[CHANNEL_OUT_T],
+	int8 gamma[CHANNEL_OUT_T],
+	int8 beta[CHANNEL_OUT_T],
 
     int H_fmap
 )
 {
     int N = BATCH_SIZE * WIDTH * WIDTH;
-	float mu[CHANNEL_OUT_T];
-	float sigma[CHANNEL_OUT_T];
+	int8 mu[CHANNEL_OUT_T];
+	int8 sigma[CHANNEL_OUT_T];
     // calc mean
     for (int n = 0; n < BATCH_SIZE; n ++) {
         for (int c = 0; c < CHANNEL_OUT_T; c ++) {
@@ -711,21 +752,21 @@ void bn_relu(
 
 // Fused relu_bp + bn_bp
 void bn_relu_bp(
-	int16 error[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH], 			// in
-	int16 bn_inputs_fw[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// in
-	int1  relu_mask[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int16 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, error_bn
+	int8 error[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH], 			// in
+	int8 bn_inputs_fw[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
+	int1 relu_mask[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
+	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, error_bn
 
-	float gamma[CHANNEL_OUT_T],										// in
-	int16 g_gamma[CHANNEL_OUT_T],									// out
-	int16 g_beta[CHANNEL_OUT_T],									// out
+	int8 gamma[CHANNEL_OUT_T],										// in
+	int8 g_gamma[CHANNEL_OUT_T],									// out
+	int8 g_beta[CHANNEL_OUT_T],										// out
 
 	int H_fmap
 )
 {
 	int N = BATCH_SIZE * WIDTH * WIDTH;
-	float mu[CHANNEL_OUT_T];
-	float sigma[CHANNEL_OUT_T];
+	int8 mu[CHANNEL_OUT_T];
+	int8 sigma[CHANNEL_OUT_T];
 
 	// calc mean and relu_bp
 	for (int n = 0; n < BATCH_SIZE; n ++) {
@@ -780,20 +821,20 @@ void bn_relu_bp(
 
 // Fused bn + relu + shortcut, only for forward (since backward is relu+bn+conv+shortcut)
 void bn_relu_shortcut(
-	int16 bn_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int16 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, bn_outputs
+	int8 bn_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
+	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, bn_outputs
 	int1  relu_mask[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// out, relu_mask for relu_bp
-	int16 input_b[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// in2 for shortcut
+	int8 input_b[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// in2 for shortcut
 
-	float gamma[CHANNEL_OUT_T],
-	float beta[CHANNEL_OUT_T],
+	int8 gamma[CHANNEL_OUT_T],
+	int8 beta[CHANNEL_OUT_T],
 
     int H_fmap
 )
 {
     int N = BATCH_SIZE * WIDTH * WIDTH;
-	float mu[CHANNEL_OUT_T];
-	float sigma[CHANNEL_OUT_T];
+	int8 mu[CHANNEL_OUT_T];
+	int8 sigma[CHANNEL_OUT_T];
     // calc mean
     for (int n = 0; n < BATCH_SIZE; n ++) {
         for (int c = 0; c < CHANNEL_OUT_T; c ++) {
@@ -839,9 +880,9 @@ void bn_relu_shortcut(
 
 void conv_3x3_rot_bp
 (
-	int16 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
-	int16 weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	int16 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
+	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
+	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
+	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
 
 	int stride,
 	int ch_in,
@@ -851,7 +892,7 @@ void conv_3x3_rot_bp
 )
 {
 	// weight rot180
-	int16 weight_rot[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
+	int8 weight_rot[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
 	for (int n = 0; n < CHANNEL_OUT_T; n ++) {
         for (int c = 0; c < CHANNEL_IN_T; c ++) {
 			for (int row = 0; row < 3; row ++) {
@@ -863,7 +904,7 @@ void conv_3x3_rot_bp
 	}
 
 	// input dilation and 0-padding(1, 1+A, 1, 1+A)
-	int16 input_dil[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];
+	int8 input_dil[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];
 	for (int bi = 0; bi < BATCH_SIZE; bi++) {
 		for (int co = 0; co < CHANNEL_OUT_T; co++) {
 			for (int row = 0; row < H_fmap_in; row++) {
@@ -879,7 +920,7 @@ void conv_3x3_rot_bp
 		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 			for (int row = 0; row < H_fmap_out; row ++) {
 				for (int col = 0; col < H_fmap_out; col ++) {
-					int16 accum = 0;
+					int8 accum = 0;
 					for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 						for (int krow = 0; krow < 3; krow ++) {
 							for (int kcol = 0; kcol < 3; kcol ++) {
@@ -901,9 +942,9 @@ void conv_3x3_rot_bp
 // Conv_1x1, padding=0
 void conv_1x1_rot_bp
 (
-	int16 input[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
-	int16 weight[CHANNEL_OUT_T][CHANNEL_OUT_T],
-	int16 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
+	int8 input[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
+	int8 weight[CHANNEL_OUT_T][CHANNEL_OUT_T],
+	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
 
 	int stride,
 	int ch_in,
@@ -913,7 +954,7 @@ void conv_1x1_rot_bp
 )
 {
 	// weight rot180
-	int16 weight_rot[CHANNEL_OUT_T][CHANNEL_IN_T];
+	int8 weight_rot[CHANNEL_OUT_T][CHANNEL_IN_T];
 	for (int n = 0; n < CHANNEL_OUT_T; n ++) {
         for (int c = 0; c < CHANNEL_IN_T; c ++) {
 			weight_rot[c][n] = weight[n][c];
@@ -921,7 +962,7 @@ void conv_1x1_rot_bp
 	}
 
 	// input dilation
-	int16 input_dil[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];
+	int8 input_dil[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];
 	for (int bi = 0; bi < BATCH_SIZE; bi++) {
 		for (int co = 0; co < CHANNEL_OUT_T; co++) {
 			for (int row = 0; row < H_fmap_in; row++) {
@@ -937,7 +978,7 @@ void conv_1x1_rot_bp
 		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 			for (int row = 0; row < H_fmap_out; row ++) {
 				for (int col = 0; col < H_fmap_out; col ++) {
-					int16 accum = 0;
+					int8 accum = 0;
 					for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 						int row_in = row;	// stride 1 transposed conv, krow = kcol = 0
 						int col_in = col;
