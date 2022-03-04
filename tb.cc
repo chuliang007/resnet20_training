@@ -8,10 +8,10 @@
 
 using namespace std;
 
-#define NUM_ACT 2205
-#define NUM_SC 42
-#define NUM_3x3_WT 2205
-#define NUM_1x1_WT 42
+#define NUM_ACT 1382
+#define NUM_SC 168
+#define NUM_3x3_WT 1382
+#define NUM_1x1_WT 168
 
 #define BATCH_SIZE 4
 #define CHANNEL_IN_T 64
@@ -26,6 +26,7 @@ int8 msb_fmap[NUM_ACT][BATCH_SIZE][CHANNEL_IN_T][WIDTH_T][WIDTH_T];
 int8 lsb_fmap[NUM_SC][BATCH_SIZE][CHANNEL_IN_T][WIDTH_T][WIDTH_T];
 int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T];
 int8 out_buf_t1[NUM_SC][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T];
+int1 relu_mask[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T];
 
 // conv + bn_sw + relu_sw
 /* forward */
@@ -1410,5 +1411,5 @@ int main(int argc, char **argv)
 	FracNet_T(image_hw, output,
 			  conv_3x3_weight_all, conv_1x1_weight_all,
 			  msb_fmap, lsb_fmap,
-			  out_buf_t0, out_buf_t1);
+			  out_buf_t0, out_buf_t1, relu_mask);
 }

@@ -6,12 +6,13 @@ using namespace std;
 
 // static	int8 msb_fmap[NUM_ACT][BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];			// input
 // static	int8 lsb_fmap[NUM_SC][BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];			// shortcut input
+// static  int8 fmap_tile_buffer[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];
 static	int8 conv_3x3_weight_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
 static	int8 conv_1x1_weight_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T];
 
 // static	int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];		// output
 // static	int8 out_buf_t1[NUM_SC][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];		// shortcut output
-static	int1 relu_mask[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];		// relu mask for backprop
+// static	int1 relu_mask[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];		// relu mask for backprop
 
 static	int8 grad_buf_t0[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];					// weight_3x3 gradient
 static	int8 grad_buf_t1[CHANNEL_OUT_T][CHANNEL_IN_T];							// weight_1x1 gradient
@@ -34,44 +35,65 @@ void FracNet_T(
 	int8 msb_fmap[NUM_ACT][BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
 	int8 lsb_fmap[NUM_SC][BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
 	int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// output
-    int8 out_buf_t1[NUM_SC][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH]		// shortcut output
+    int8 out_buf_t1[NUM_SC][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// shortcut output
 
-    // int1 relu_mask[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH]		// relu mask for backprop
+    int1 relu_mask[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH]		// relu mask for backprop
 )
 {
 #pragma HLS INTERFACE m_axi depth=12288 port=image offset=slave bundle=IMG
 #pragma HLS INTERFACE m_axi depth=40 port=output offset=slave bundle=RESULT
 
-#pragma HLS INTERFACE m_axi depth=5080320 port=conv_3x3_weight_all offset=slave bundle=conv_3x3_weight_all	// 2205*4*64*3*3=5080320
-#pragma HLS INTERFACE m_axi depth=11520 port=conv_1x1_weight_all offset=slave bundle=conv_1x1_weight_all	// 45*4*64=11520
+#pragma HLS INTERFACE m_axi depth=3184182 port=conv_3x3_weight_all offset=slave bundle=conv_3x3_weight_all	// 1382*4*64*3*3 = 3184182
+#pragma HLS INTERFACE m_axi depth=43008 port=conv_1x1_weight_all offset=slave bundle=conv_1x1_weight_all	// 168*4*64 = 43008
 
-#pragma HLS INTERFACE m_axi depth=458027520 port=msb_fmap offset=slave bundle=msb_fmap	// 2205*4*64*32*32 = 458027520
-#pragma HLS INTERFACE m_axi depth=11010048 port=lsb_fmap offset=slave bundle=lsb_fmap	// 42*4*64*32*32 = 11010048
-#pragma HLS INTERFACE m_axi depth=458027520 port=out_buf_t0 offset=slave bundle=out_buf_t0
-#pragma HLS INTERFACE m_axi depth=11010048 port=out_buf_t1 offset=slave bundle=out_buf_t1
+#pragma HLS INTERFACE m_axi depth=362283008 port=msb_fmap offset=slave bundle=msb_fmap	// 1382*4*64*32*32 = 362283008
+#pragma HLS INTERFACE m_axi depth=44040192 port=lsb_fmap offset=slave bundle=lsb_fmap	// 168*4*64*32*32 = 44040192
+#pragma HLS INTERFACE m_axi depth=362283008 port=out_buf_t0 offset=slave bundle=out_buf_t0
+#pragma HLS INTERFACE m_axi depth=44040192 port=out_buf_t1 offset=slave bundle=out_buf_t1
+#pragma HLS INTERFACE m_axi depth=362283008 port=relu_mask offset=slave bundle=relu_mask
 
 #pragma HLS INTERFACE s_axilite port=return bundle=CTRL
 
-/*
-#pragma HLS ALLOCATION instances=bn_relu limit=1 function
-#pragma HLS ALLOCATION instances=bn_relu_bp limit=1 function
+// instance allocation
+#pragma HLS ALLOCATION instances=bn_relu limit=2 function
+#pragma HLS ALLOCATION instances=bn_relu_bp limit=2 function
+#pragma HLS ALLOCATION instances=shortcut limit=1 function
+
 #pragma HLS ALLOCATION instances=avgpool limit=1 function
 #pragma HLS ALLOCATION instances=avgpool_bp limit=1 function
 #pragma HLS ALLOCATION instances=FC limit=1 function
 #pragma HLS ALLOCATION instances=FC_bp limit=1 function
-#pragma HLS ALLOCATION instances=shortcut limit=1 function
-#pragma HLS ALLOCATION instances=conv_3x3 limit=1 function
-#pragma HLS ALLOCATION instances=conv_1x1 limit=1 function
-#pragma HLS ALLOCATION instances=conv_3x3_rot_bp limit=1 function
-#pragma HLS ALLOCATION instances=conv_1x1_rot_bp limit=1 function
-#pragma HLS ALLOCATION instances=conv_3x3_grad limit=1 function
-#pragma HLS ALLOCATION instances=conv_1x1_grad limit=1 function
-#pragma HLS ALLOCATION instances=SGD_WU_3x3 limit=1 function
-#pragma HLS ALLOCATION instances=SGD_WU_1x1 limit=1 function
-*/
 
+#pragma HLS ALLOCATION instances=conv_3x3 limit=2 function
+#pragma HLS ALLOCATION instances=conv_1x1 limit=1 function
+
+#pragma HLS ALLOCATION instances=conv_3x3_rot_bp limit=2 function
+#pragma HLS ALLOCATION instances=conv_1x1_rot_bp limit=1 function
+#pragma HLS ALLOCATION instances=conv_3x3_grad limit=2 function
+#pragma HLS ALLOCATION instances=conv_1x1_grad limit=1 function
+
+#pragma HLS ALLOCATION instances=SGD_WU_3x3 limit=2 function
+#pragma HLS ALLOCATION instances=SGD_WU_1x1 limit=1 function
+
+// array partition
+// #pragma HLS ARRAY_PARTITION variable=fmap_tile_buffer complete dim=1
+// #pragma HLS ARRAY_PARTITION variable=fmap_tile_buffer complete dim=2
+
+#pragma HLS ARRAY_PARTITION variable=conv_3x3_weight_tile_buffer complete dim=1
+#pragma HLS ARRAY_PARTITION variable=conv_3x3_weight_tile_buffer complete dim=2
+#pragma HLS ARRAY_PARTITION variable=conv_1x1_weight_tile_buffer complete dim=1
+#pragma HLS ARRAY_PARTITION variable=conv_1x1_weight_tile_buffer complete dim=2
+
+#pragma HLS ARRAY_PARTITION variable=grad_buf_t0 complete dim=1
+#pragma HLS ARRAY_PARTITION variable=grad_buf_t0 complete dim=2
+#pragma HLS ARRAY_PARTITION variable=grad_buf_t1 complete dim=1
+#pragma HLS ARRAY_PARTITION variable=grad_buf_t1 complete dim=2
+
+#pragma HLS ARRAY_PARTITION variable=gamma complete dim=1
+#pragma HLS ARRAY_PARTITION variable=beta complete dim=1
+#pragma HLS ARRAY_PARTITION variable=grad_gamma complete dim=1
+#pragma HLS ARRAY_PARTITION variable=grad_beta complete dim=1
 	/*
-    // Initialize the buffers to 0
 	global_buffer_init_0:
 	for (int i = 0; i < WIDTH; i ++){
 		for (int j = 0; j < WIDTH; j ++){
@@ -87,10 +109,11 @@ void FracNet_T(
 		}
 	}
 	*/
-
+	// Initialize the buffers to 0
 	global_buffer_init:
-	for (int c_out = 0; c_out < CHANNEL_OUT_T; c_out ++){
+	for (int c_out = 0; c_out < CHANNEL_OUT_T; c_out ++) {
 		for (int c_in = 0; c_in < CHANNEL_IN_T; c_in ++) {
+#pragma HLS pipeline
 			grad_buf_t1[c_out][c_in] = 0;
 			for (int row = 0; row < 3; row ++){
 				for (int col = 0; col < 3; col ++){
@@ -116,6 +139,7 @@ void FracNet_T(
 	LOOP_GetImg:
 	for (int b = 0; b < BATCH_SIZE; b ++) {
 		for (int c = 0; c < 3; c ++) {
+#pragma HLS PIPELINE
 			for (int row = 0; row < 32; row ++) {
 				for (int col = 0; col < 32; col ++) {
 					msb_fmap[0][b][c][row][col] = image[b][c][row][col];
@@ -139,6 +163,7 @@ void FracNet_T(
 
     LOOP_Conv1:	// 4 outermost for-loops
     for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+#pragma HLS DATAFLOW
 		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
 				// ini = 0
@@ -786,7 +811,7 @@ void FracNet_T(
     // Initialize the buffers for pooling and FC layer
 	int8 pool_out_buf[BATCH_SIZE][CHANNEL_OUT_T];
 	int8 linear_out_buf[BATCH_SIZE][10];
-	int8 linear_weight[10][CHANNEL_OUT_T];	// FC weight
+	int8 linear_weight[16][10][CHANNEL_OUT_T];	// FC weight: out_channels/CHANNEL_OUT_T
 
 	pool_out_buf_init:
 	for (int b = 0; b < BATCH_SIZE; b ++) {
@@ -809,8 +834,10 @@ void FracNet_T(
 	}
 
 	// FC
+	int fc_weight_ptr = 0;
 	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
-		FC(pool_out_buf, linear_weight, linear_out_buf);
+		fc_weight_ptr += 1;
+		FC(pool_out_buf, linear_weight[fc_weight_ptr], linear_out_buf);
 	}
 
 	write_output:
@@ -851,6 +878,10 @@ void FracNet_T(
 	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 		avgpool_bp(pool_out_buf, msb_fmap[ini], 4);
 	}
+
+	printf("ini: %d", ini);
+	printf("conv_3x3_weight_ptr: %d", conv_3x3_weight_ptr);
+	printf("conv_1x1_weight_ptr: %d", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// LAYER 4 ///////////////////////////

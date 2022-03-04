@@ -12,10 +12,10 @@ void FracNet_T(
 */
 #define BATCH_SIZE 4
 
-#define NUM_3x3_WT 2205
-#define NUM_1x1_WT 42
-#define NUM_ACT 2205
-#define NUM_SC 42
+#define NUM_3x3_WT 1382
+#define NUM_1x1_WT 168
+#define NUM_ACT 1382
+#define NUM_SC 168
 
 #define CHANNEL_IN_T 64
 #define CHANNEL_OUT_T 64
@@ -31,7 +31,8 @@ void FracNet_T(
 	int8 msb_fmap[NUM_ACT][BATCH_SIZE][CHANNEL_IN_T][WIDTH_T][WIDTH_T],
 	int8 lsb_fmap[NUM_SC][BATCH_SIZE][CHANNEL_IN_T][WIDTH_T][WIDTH_T],
 	int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T],
-    int8 out_buf_t1[NUM_SC][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T]
+    int8 out_buf_t1[NUM_SC][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T],
+	int1 relu_mask[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T]
 );
 
 #endif
