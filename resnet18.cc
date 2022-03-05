@@ -162,8 +162,7 @@ void FracNet_T(
 	ini = 0;
 
     LOOP_Conv1:	// 4 outermost for-loops
-    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
-#pragma HLS DATAFLOW
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
 				// ini = 0
@@ -813,15 +812,11 @@ void FracNet_T(
 	int8 linear_out_buf[BATCH_SIZE][10];
 	int8 linear_weight[16][10][CHANNEL_OUT_T];	// FC weight: out_channels/CHANNEL_OUT_T
 
-	pool_out_buf_init:
+	out_buf_init:
 	for (int b = 0; b < BATCH_SIZE; b ++) {
 		for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 			pool_out_buf[b][c] = 0;
 		}
-	}
-
-	linear_out_buf_init:
-	for (int b = 0; b < BATCH_SIZE; b ++) {
 		for (int i = 0; i < 10; i ++) {
 			linear_out_buf[b][i] = 0;
 		}
@@ -830,7 +825,7 @@ void FracNet_T(
 	// avgpool
 	ini += 1;	// ini = 17
 	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
-		avgpool(msb_fmap[ini], pool_out_buf, 4, 4);
+		avgpool(msb_fmap[ini], pool_out_buf);
 	}
 
 	// FC
@@ -876,7 +871,7 @@ void FracNet_T(
 	// avgpool_bp
 	ini += 1;	// ini = 18
 	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
-		avgpool_bp(pool_out_buf, msb_fmap[ini], 4);
+		avgpool_bp(pool_out_buf, msb_fmap[ini]);
 	}
 
 	printf("ini: %d", ini);
