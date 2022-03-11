@@ -500,6 +500,7 @@ void FracNet_T(
 			for (int b = 0; b < BATCH_SIZE; b ++) {
 
 				ini += 1;	// ini = 9
+				ini_sc += 1; // ini_sc = 1
 				conv_1x1_weight_ptr += 1;
 
 				load_conv_1x1_weights(
@@ -665,6 +666,7 @@ void FracNet_T(
 			for (int b = 0; b < BATCH_SIZE; b ++) {
 
 				ini += 1;	// ini = 13
+				ini_sc += 1; // ini_sc = 2
 				conv_1x1_weight_ptr += 1;
 
 				load_conv_1x1_weights(
@@ -972,6 +974,8 @@ void FracNet_T(
 				SGD_WU_3x3(
 					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
     }
@@ -1008,6 +1012,8 @@ void FracNet_T(
 				SGD_WU_3x3(
 					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
     }
@@ -1031,19 +1037,20 @@ void FracNet_T(
 			for (int b = 0; b < BATCH_SIZE; b ++) {
 
 				// ini = 14
+				// ini_sc = 2
 				// conv_1x1_weight_ptr -= 1;
 
 				load_conv_1x1_weights(
 					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
-				conv_1x1_rot_bp(	// note the index of shortcut input
-					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
-					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
-				);
 				bn_bp(
-					msb_fmap_tile_buffer_0, out_buf_t1[ini - 2], lsb_fmap_tile_buffer,	// conv+bn shortcut
+					msb_fmap_tile_buffer_1, out_buf_sc[ini_sc], msb_fmap_tile_buffer_0,	// conv+bn shortcut
 					gamma, grad_gamma, grad_beta,
 					H_fmap_out
+				);
+				conv_1x1_rot_bp(	// note the index of shortcut input
+					msb_fmap_tile_buffer_0, conv_1x1_weight_tile_buffer, lsb_fmap_tile_buffer,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
 				);
 				///////////////////////////
 				// conv_1x1_weight_grad_cal
@@ -1055,6 +1062,8 @@ void FracNet_T(
 				SGD_WU_1x1(
 					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
     }
@@ -1192,6 +1201,8 @@ void FracNet_T(
 				SGD_WU_3x3(
 					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
 	}
@@ -1228,6 +1239,8 @@ void FracNet_T(
 				SGD_WU_3x3(
 					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
 	}
@@ -1251,19 +1264,20 @@ void FracNet_T(
 			for (int b = 0; b < BATCH_SIZE; b ++) {
 
 				// ini = 10
+				ini_sc -= 1;// ini_sc = 1
 				conv_1x1_weight_ptr -= 1;
 
 				load_conv_1x1_weights(
 					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
-				conv_1x1_rot_bp(	// note the index of shortcut input
-					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
-					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
-				);
 				bn_bp(
-					msb_fmap_tile_buffer_0, out_buf_t1[ini - 2], lsb_fmap_tile_buffer,	// conv+bn shortcut
+					msb_fmap_tile_buffer_1, out_buf_sc[ini_sc], msb_fmap_tile_buffer_0,	// conv+bn shortcut
 					gamma, grad_gamma, grad_beta,
 					H_fmap_out
+				);
+				conv_1x1_rot_bp(	// note the index of shortcut input
+					msb_fmap_tile_buffer_0, conv_1x1_weight_tile_buffer, lsb_fmap_tile_buffer,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
 				);
 				///////////////////////////
 				// conv_1x1_weight_grad_cal
@@ -1275,6 +1289,8 @@ void FracNet_T(
 				SGD_WU_1x1(
 					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
 	}
@@ -1412,6 +1428,8 @@ void FracNet_T(
 				SGD_WU_3x3(
 					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
 	}
@@ -1448,6 +1466,8 @@ void FracNet_T(
 				SGD_WU_3x3(
 					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
 	}
@@ -1471,19 +1491,20 @@ void FracNet_T(
 			for (int b = 0; b < BATCH_SIZE; b ++) {
 
 				// ini = 6
+				ini_sc -= 1;// ini_sc = 0
 				conv_1x1_weight_ptr -= 1;
 
 				load_conv_1x1_weights(
 					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
-				conv_1x1_rot_bp(	// note the index of shortcut input
-					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
-					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
-				);
 				bn_bp(
-					msb_fmap_tile_buffer_0, out_buf_t1[ini - 2], lsb_fmap_tile_buffer,	// conv+bn shortcut
+					msb_fmap_tile_buffer_1, out_buf_sc[ini_sc], msb_fmap_tile_buffer_0,	// conv+bn shortcut
 					gamma, grad_gamma, grad_beta,
 					H_fmap_out
+				);
+				conv_1x1_rot_bp(	// note the index of shortcut input
+					msb_fmap_tile_buffer_0, conv_1x1_weight_tile_buffer, lsb_fmap_tile_buffer,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
 				);
 				///////////////////////////
 				// conv_1x1_weight_grad_cal
@@ -1495,6 +1516,8 @@ void FracNet_T(
 				SGD_WU_1x1(
 					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
 	}
@@ -1590,6 +1613,8 @@ void FracNet_T(
 				SGD_WU_3x3(
 					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
     }
@@ -1669,6 +1694,8 @@ void FracNet_T(
 				SGD_WU_3x3(
 					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
     }
@@ -1767,6 +1794,8 @@ void FracNet_T(
 				SGD_WU_3x3(
 					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
     }
