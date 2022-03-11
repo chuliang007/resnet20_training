@@ -1,901 +1,1773 @@
-#include "typedefs.h"
-#include <iostream>
-#include <stdlib.h>
-#include <math.h>
 #include "bnn.h"
-// #include "weights_tb.h"
-#include <fstream>
-#include <hls_math.h>
+#include "layer.h"
 #include "dimension_def.h"
-#include "weights_fracnet_64.h"
-#include "conv_weights.h"
+
+using namespace std;
+
+static  int8 msb_fmap_tile_buffer_0[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
+static  int8 msb_fmap_tile_buffer_1[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
+static  int8 lsb_fmap_tile_buffer[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];		// shortcut activation/error on-chip
+static	int8 conv_3x3_weight_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
+static	int8 conv_1x1_weight_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T];
+
+static	int8 grad_buf_t0[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];					// weight_3x3 gradient on-chip
+static	int8 grad_buf_t1[CHANNEL_OUT_T][CHANNEL_IN_T];							// weight_1x1 gradient on-chip
+
+static	int8 gamma[CHANNEL_OUT_T];
+static	int8 beta[CHANNEL_OUT_T];
+static	int8 grad_gamma[CHANNEL_OUT_T];
+static	int8 grad_beta[CHANNEL_OUT_T];
 
 //--------------------
-//   Utils Function
+//  Top Function 
 //--------------------
+void FracNet_T(
+	int8 image[BATCH_SIZE][3][32][32],
+	int8 output[BATCH_SIZE][10],
 
-// identity shortcut
-void identity_shortcut(
-	int8 msb_in[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
-	int8 lsb_out[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
-	int H_fmap_in
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=msb_in complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=lsb_out complete dim=2
-
-	for (int row = 0; row < H_fmap_in; row ++) {
-		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_IN_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-                	lsb_out[n][c][row][col] = msb_in[n][c][row][col];
-				}
-			}
-		}
-	}
-}
-
-// conv weight loading from DRAM
-void load_conv_3x3_weights(
-	int8 weight_3x3_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
 	int8 conv_3x3_weight_all[NUM_3x3_WT][CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	int conv_3x3_weight_ptr
+	int8 conv_1x1_weight_all[NUM_1x1_WT][CHANNEL_OUT_T][CHANNEL_IN_T],
+
+	int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// output activation
+    int8 out_buf_t1[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
+	int8 out_buf_sc[NUM_SC][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// shortcut output activation
+
+    int1 relu_mask[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH]		// relu mask for backprop
 )
 {
-// #pragma HLS ARRAY_PARTITION variable=weight_3x3_tile_buffer complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight_3x3_tile_buffer complete dim=2
+#pragma HLS INTERFACE m_axi depth=12288 port=image offset=slave bundle=IMG	// 4*3*32*32 = 12288
+#pragma HLS INTERFACE m_axi depth=40 port=output offset=slave bundle=RESULT	// 4*10
 
+#pragma HLS INTERFACE m_axi depth=2755584 port=conv_3x3_weight_all offset=slave bundle=conv_3x3_weight_all	// 1196*4*64*3*3 = 2755584
+#pragma HLS INTERFACE m_axi depth=43008 port=conv_1x1_weight_all offset=slave bundle=conv_1x1_weight_all	// 168*4*64 = 43008
+
+#pragma HLS INTERFACE m_axi depth=333425664 port=out_buf_t0 offset=slave bundle=out_buf_t0					// 1196*4*64*33*33 = 333425664
+#pragma HLS INTERFACE m_axi depth=333425664 port=out_buf_t1 offset=slave bundle=out_buf_t1
+#pragma HLS INTERFACE m_axi depth=46835712 port=out_buf_sc offset=slave bundle=out_buf_sc					// 168*4*64*33*33 = 46835712
+#pragma HLS INTERFACE m_axi depth=46835712 port=relu_mask offset=slave bundle=relu_mask
+
+#pragma HLS INTERFACE s_axilite port=return bundle=CTRL
+
+// instance allocation
+#pragma HLS ALLOCATION instances=bn_relu limit=1 function
+#pragma HLS ALLOCATION instances=bn_relu_bp limit=1 function
+#pragma HLS ALLOCATION instances=shortcut limit=1 function
+
+#pragma HLS ALLOCATION instances=avgpool limit=1 function
+#pragma HLS ALLOCATION instances=avgpool_bp limit=1 function
+#pragma HLS ALLOCATION instances=FC limit=1 function
+#pragma HLS ALLOCATION instances=FC_bp limit=1 function
+
+#pragma HLS ALLOCATION instances=conv_3x3 limit=1 function
+#pragma HLS ALLOCATION instances=conv_1x1 limit=1 function
+
+#pragma HLS ALLOCATION instances=conv_3x3_rot_bp limit=1 function
+#pragma HLS ALLOCATION instances=conv_1x1_rot_bp limit=1 function
+#pragma HLS ALLOCATION instances=conv_3x3_grad limit=1 function
+#pragma HLS ALLOCATION instances=conv_1x1_grad limit=1 function
+
+#pragma HLS ALLOCATION instances=SGD_WU_3x3 limit=1 function
+#pragma HLS ALLOCATION instances=SGD_WU_1x1 limit=1 function
+
+// array partition
+#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_0 complete dim=1
+#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_0 complete dim=2
+#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_1 complete dim=1
+#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_1 complete dim=2
+#pragma HLS ARRAY_PARTITION variable=lsb_fmap_tile_buffer complete dim=1
+#pragma HLS ARRAY_PARTITION variable=lsb_fmap_tile_buffer complete dim=2
+
+#pragma HLS ARRAY_PARTITION variable=conv_3x3_weight_tile_buffer complete dim=1
+#pragma HLS ARRAY_PARTITION variable=conv_3x3_weight_tile_buffer complete dim=2
+#pragma HLS ARRAY_PARTITION variable=conv_1x1_weight_tile_buffer complete dim=1
+#pragma HLS ARRAY_PARTITION variable=conv_1x1_weight_tile_buffer complete dim=2
+
+#pragma HLS ARRAY_PARTITION variable=grad_buf_t0 complete dim=1
+#pragma HLS ARRAY_PARTITION variable=grad_buf_t0 complete dim=2
+#pragma HLS ARRAY_PARTITION variable=grad_buf_t1 complete dim=1
+#pragma HLS ARRAY_PARTITION variable=grad_buf_t1 complete dim=2
+
+#pragma HLS ARRAY_PARTITION variable=gamma complete dim=1
+#pragma HLS ARRAY_PARTITION variable=beta complete dim=1
+#pragma HLS ARRAY_PARTITION variable=grad_gamma complete dim=1
+#pragma HLS ARRAY_PARTITION variable=grad_beta complete dim=1
+
+	// Initialize the buffers to 0
+	fmap_buf_init:
+	for (int k = 0; k < CHANNEL_IN_T; k ++) {
+		for (int i = 0; i < WIDTH; i ++) {
+			for (int j = 0; j < WIDTH; j ++) {
+#pragma HLS pipeline
+				for (int b = 0; k < BATCH_SIZE; k ++) {
+					msb_fmap_tile_buffer_0[b][k][i][j] = 0;
+					msb_fmap_tile_buffer_1[b][k][i][j] = 0;
+					lsb_fmap_tile_buffer[b][k][i][j] = 0;
+				}
+			}
+		}
+	}
+	
+	grad_buf_init:
 	for (int c_out = 0; c_out < CHANNEL_OUT_T; c_out ++) {
 		for (int c_in = 0; c_in < CHANNEL_IN_T; c_in ++) {
-			for (int row = 0; row < 3; row ++) {
-				for (int col = 0; col < 3; col ++) {
-// #pragma HLS PIPELINE
-					weight_3x3_tile_buffer[c_out][c_in][row][col] = conv_3x3_weight_all[conv_3x3_weight_ptr][c_out][c_in][row][col];
+			grad_buf_t1[c_out][c_in] = 0;
+#pragma HLS pipeline
+			for (int row = 0; row < 3; row ++){
+				for (int col = 0; col < 3; col ++){
+					grad_buf_t0[c_out][c_in][row][col] = 0;
 				}
 			}
 		}
 	}
-}
 
-void load_conv_1x1_weights(
-	int8 weight_1x1_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T],
-	int8 conv_1x1_weight_all[NUM_3x3_WT][CHANNEL_OUT_T][CHANNEL_IN_T],
-	int conv_1x1_weight_ptr
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=weight_1x1_tile_buffer complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight_1x1_tile_buffer complete dim=2
+	int H_fmap_in, H_fmap_out, in_channels, in_channels_after_pack; 
+    int out_channels, out_channel_start, stride, conv_3x3_weight_ptr, conv_1x1_weight_ptr, ini, ini_sc;
+	int1 ctrl_sc;
 
-	for (int c_out = 0; c_out < CHANNEL_OUT_T; c_out ++) {
-		for (int c_in = 0; c_in < CHANNEL_IN_T; c_in ++) {
-// #pragma HLS PIPELINE
-			weight_1x1_tile_buffer[c_out][c_in] = conv_1x1_weight_all[conv_1x1_weight_ptr][c_out][c_in];
-		}
-	}
-}
 
-// Batch Norm
-void bn(
-	int8 bn_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out
+//////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////		Forward path		//////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////
 
-	int8 gamma[CHANNEL_OUT_T],
-	int8 beta[CHANNEL_OUT_T],
 
-    int H_fmap
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=bn_inputs complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=out_buf complete dim=2
+	////////////////////////////////////////////////
+	//////////// GET IMAGE /////////////////////////
+	////////////////////////////////////////////////
 
-// #pragma HLS ARRAY_PARTITION variable=gamma complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=beta complete dim=1
-
-	int8 N = BATCH_SIZE * WIDTH * WIDTH;
-	int8 mu[CHANNEL_OUT_T];
-	int8 sigma[CHANNEL_OUT_T];
-	int8 var[CHANNEL_OUT_T];
-// #pragma HLS ARRAY_PARTITION variable=mu complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=var complete dim=1
-
-// // #pragma HLS DATAFLOW
-
-    // calc mean
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-                    mu[c] = mu[c] + bn_inputs[n][c][row][col]/N;
+	LOOP_GetImg:
+	for (int row = 0; row < 32; row ++) {
+		for (int col = 0; col < 32; col ++) {
+#pragma HLS pipeline
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+				for (int c = 0; c < 3; c ++) {
+					msb_fmap_tile_buffer_1[b][c][row][col] = image[b][c][row][col];
 				}
 			}
 		}
 	}
-    // calc std variance
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-                	var[c] = var[c] + (bn_inputs[n][c][row][col]-mu[c])*(bn_inputs[n][c][row][col]-mu[c]);
-				}
+	////////////////////////////////////////////////
+	/////////// Conv 1 + bn 1 + relu 1 /////////////
+	////////////////////////////////////////////////
+
+	in_channels = 64;
+	in_channels_after_pack = 1;
+	out_channels = 64;
+	H_fmap_in =32;
+	H_fmap_out = 32;
+	stride = 1;
+	conv_3x3_weight_ptr = 0;
+
+	ini = 0;
+	ini_sc = 0;
+	ctrl_sc = 1; // if ctrl_sc=1, generate and send out_copy into DDR
+
+    LOOP_Conv1:	 // 4 outermost for-loops
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				// ini = 0
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
-	}
-    for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-		sigma[c] = sqrt(var[c]/N);
-	}
-    // calc affine output
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-					out_buf[n][c][row][col] = gamma[c]*(bn_inputs[n][c][row][col]-mu[c])/sigma[c] + beta[c];
-				}
-			}
-		}
-	}			
-}
-
-// Batch Norm Back-prop
-void bn_bp(
-	int8 error[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH], 			// in
-	int8 bn_inputs_fw[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, error_bn
-
-	int8 gamma[CHANNEL_OUT_T],										// in
-	int8 g_gamma[CHANNEL_OUT_T],									// out
-	int8 g_beta[CHANNEL_OUT_T],										// out
-
-	int H_fmap
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=error complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=bn_inputs_fw complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=out_buf complete dim=2
-
-// #pragma HLS ARRAY_PARTITION variable=gamma complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=g_gamma complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=g_beta complete dim=1
-
-	int8 N = BATCH_SIZE * WIDTH * WIDTH;
-	int8 mu[CHANNEL_OUT_T];
-	int8 sigma[CHANNEL_OUT_T];
-	int8 var[CHANNEL_OUT_T];
-// #pragma HLS ARRAY_PARTITION variable=mu complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=var complete dim=1
-
-// // #pragma HLS DATAFLOW
-
-	// calc mean
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-                    mu[c] = mu[c] + bn_inputs_fw[n][c][row][col]/N;
-				}
-			}
-		}
-	}
-	// calc std variance
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-					var[c] = var[c] + (bn_inputs_fw[n][c][row][col]-mu[c])*(bn_inputs_fw[n][c][row][col]-mu[c]);
-				}
-			}
-		}
-	}
-    for (int c = 0; c < CHANNEL_OUT_T; c ++){
-    	sigma[c] = sqrt(var[c]/N);
     }
-	//calc g_gamma and g_beta (also used for error calc)
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-                    g_beta[c] = g_beta[c] + error[n][c][row][col];
-                    g_gamma[c] = g_gamma[c] + error[n][c][row][col]*(bn_inputs_fw[n][c][row][col]-mu[c])/sigma[c];
-				}
+
+	////////////////////////////////////////////////
+	//////////// LAYER 1 ///////////////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 32;
+	H_fmap_out = 32;
+	in_channels = 64;
+	in_channels_after_pack = 1;
+	out_channels = 64;
+	stride = 1;
+
+	////////////////////////////////////////////////
+	//////////// layer1_0 PG1 //////////////////////
+	LOOP_layer1_0_Conv1:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 1
+				conv_3x3_weight_ptr += 1;
+
+				// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
-	}
-	// calc backprop error
-	for (int row = 0; row < H_fmap; row ++) { 
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-            		out_buf[n][c][row][col] = gamma[c]*error[n][c][row][col]/sigma[c] - gamma[c]*g_beta[c]/(N*sigma[c]) - (bn_inputs_fw[n][c][row][col]-mu[c])*g_gamma[c]/(N*gamma[c]*sigma[c]*sigma[c]);
-				}
-			}
-		}
-	}			
-}
-
-// AvgPool
-void avgpool(
-	int8 avg_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T] 						// out, avg_outputs
-
-	//int stride,
-	//int H_fmap
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=avg_inputs complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=out_buf complete dim=2
-
-	// int H_fmap_OUT = H_fmap/stride;
-	// int stride2 = stride*stride;
-	// int8 accum;
-
-	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-		for (int s = 0; s < 4; s ++) {
-			for (int ss = 0; ss < 4; ss ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-					out_buf[n][c] += avg_inputs[n][c][s][ss]/16;
-				}
-			}
-		}
-	}
-}
-
-// AvgPool Back-prop
-void avgpool_bp(
-	int8 error[BATCH_SIZE][CHANNEL_OUT_T],							// in
-	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH]			// out, error_avg
-	// int stride
-	// int H_fmap	// #(-1,512,1,1)
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=error complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=out_buf complete dim=2
-
-	// int H_fmap_OUT = stride;
-	// int stride2 = stride*stride;
-
-	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-		for (int s = 0; s < 4; s ++) {
-			for (int ss = 0; ss < 4; ss ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-					out_buf[n][c][s][ss] = error[n][c]/16;
-				}
-			}
-		}
-	}
-}
-
-// FC (no bias)
-void FC(
-	int8 inputs[BATCH_SIZE][CHANNEL_OUT_T],
-	int8 linear_weight[10][CHANNEL_OUT_T],
-	int8 outputs[BATCH_SIZE][10]
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=inputs complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=linear_weight complete dim=2
-
-	for (int cii = 0; cii < CHANNEL_OUT_T; cii++) {
-		for (int coo = 0; coo < 10; coo ++) {
-// #pragma HLS PIPELINE
-			for (int bii = 0; bii < BATCH_SIZE; bii++) {
-				outputs[bii][coo] += inputs[bii][cii] * linear_weight[coo][cii];
-			}
-		}
-	}
-}
-
-// FC Back-prop (no bias)
-void FC_bp(
-	int8 inputs[BATCH_SIZE][10],
-	int8 linear_weight_transpose[CHANNEL_OUT_T][10],
-	int8 outputs[BATCH_SIZE][CHANNEL_OUT_T]
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=linear_weight_transpose complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=outputs complete dim=2
-
-	for (int coo = 0; coo < CHANNEL_OUT_T; coo ++) {
-		for (int cii = 0; cii < 10; cii++) {
-// #pragma HLS PIPELINE
-			for (int bii = 0; bii < BATCH_SIZE; bii++) {
-				outputs[bii][coo] += inputs[bii][cii] * linear_weight_transpose[coo][cii];
-			}
-		}
-	}
-}
-
-// Shortcut- identity branch
-void shortcut(
-	int8 input_a[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// in1
-	int8 input_b[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// in2
-	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out
-	int8 out_buf_DDR[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, off-chip
-
-	int H_fmap,
-	int1 ctrl_sc	// if ctrl_sc=1, generate and send out_copy into DDR
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=input_a complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=input_b complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=out_buf complete dim=2
-
-	// int8 out_feature_a[BATCH_SIZE][CHANNEL_OUT_T];
-	// int8 out_feature_b[BATCH_SIZE][CHANNEL_OUT_T];
-
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-					out_buf[n][c][row][col] = input_a[n][c][row][col] + input_b[n][c][row][col];
-					if(ctrl_sc == 1) {
-						out_buf_DDR[n][c][row][col] = out_buf[n][c][row][col];			
-					}
-				}
-			}
-		}
-	}
-}
-
-// ============
-// Conv forward
-// ============
-
-// Conv_3x3, padding=1
-void conv_3x3
-(
-	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
-	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// activations on-chip for inference
-	int8 output_DDR[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// activations off-chip for backprop
-	
-	int stride,
-	int ch_in,
-	int ch_out,
-	int H_fmap_in,
-	int H_fmap_out
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=input complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=output complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=output_DDR complete dim=2
-
-	// input 0-padding(1, 1, 1, 1)
-	// conv
-	for (int row = 0; row < H_fmap_out; row ++) {
-		for (int col = 0; col < H_fmap_out; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-					for (int krow = 0; krow < 3; krow ++) {
-						for (int kcol = 0; kcol < 3; kcol ++) {
-// #pragma HLS PIPELINE
-							for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-								int row_in = row*stride + krow;		
-								int col_in = col*stride + kcol;
-								output[bi][co][row][col] += input[bi][ci][row_in][col_in] * weight[co][ci][krow+1][kcol+1];		// +1 due to 0-padding
-								output_DDR[bi][co][row][col] = output[bi][co][row][col];
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-// Conv_1x1, padding=0
-void conv_1x1
-(
-	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],
-	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T], //[1][1],
-	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// activations on-chip for inference
-	int8 output_DDR[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// activations off-chip for backprop
-
-	int stride,
-	int ch_in,
-	int ch_out,
-	int H_fmap_in,
-	int H_fmap_out
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=input complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=output complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=output_DDR complete dim=2
-
-	for (int row = 0; row < H_fmap_out; row++) {
-		for (int col = 0; col < H_fmap_out; col++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co++) {
-				for (int ci = 0; ci < CHANNEL_IN_T; ci++) {
-// #pragma HLS PIPELINE
-					for (int bi = 0; bi < BATCH_SIZE; bi++) {
-						int row_in = row*stride;	// krow = kcol = 0
-						int col_in = col*stride;
-						output[bi][co][row][col] += input[bi][ci][row_in][col_in] * weight[co][ci]; //[0][0];
-						output_DDR[bi][co][row][col] = output[bi][co][row][col];
-					}
-				}
-			}
-		}
-	}
-}
-
-// =============
-// Conv backward
-// =============
-
-// conv_3x3_rot_bp, padding=1
-void conv_3x3_rot_bp
-(
-	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],		// error in on-chip
-	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// error out on-chip
-
-	int stride,
-	int ch_in,
-	int ch_out,
-	int H_fmap_in,
-	int H_fmap_out
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=input complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=output complete dim=2
-
-	// input dilation and 0-padding(1, 1+A, 1, 1+A)
-	int8 input_dil[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];
-	int8 weight_rot[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
-// #pragma HLS ARRAY_PARTITION variable=input_dil complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=input_dil complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=weight_rot complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight_rot complete dim=2
-
-// // #pragma HLS DATAFLOW
-
-	for (int row = 0; row < H_fmap_in; row++) {
-		for (int col = 0; col < H_fmap_in; col++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co++) {
-// #pragma HLS PIPELINE
-				for (int bi = 0; bi < BATCH_SIZE; bi++) {
-					input_dil[bi][co][row*stride + 1][col*stride + 1] = input[bi][co][row][col];	// +1 due to 0-padding
-				}
-				// weight rot180
-				for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
-					for (int row = 0; row < 3; row ++) {
-						for (int col = 0; col < 3; col ++) {
-// #pragma HLS PIPELINE
-							weight_rot[cin][co][row][col] = weight[co][cin][3-row-1][3-col-1];
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// conv
-	for (int row = 0; row < H_fmap_out; row ++) {
-		for (int col = 0; col < H_fmap_out; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-					for (int krow = 0; krow < 3; krow ++) {
-						for (int kcol = 0; kcol < 3; kcol ++) {
-// #pragma HLS PIPELINE
-							for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-								int row_in = row + krow;	// stride 1 transposed conv
-								int col_in = col + kcol;
-								output[bi][co][row][col] += input_dil[bi][ci][row_in][col_in] * weight_rot[co][ci][krow][kcol];
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-// conv_1x1_rot_bp, padding=0
-void conv_1x1_rot_bp
-(
-	int8 input[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// error in on-chip
-	int8 weight[CHANNEL_OUT_T][CHANNEL_OUT_T],
-	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// error out on-chip
-
-	int stride,
-	int ch_in,
-	int ch_out,
-	int H_fmap_in,
-	int H_fmap_out
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=input complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=output complete dim=2
-
-	// weight rot180 & input dilation
-	int8 weight_rot[CHANNEL_OUT_T][CHANNEL_IN_T];
-	int8 input_dil[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];
-// #pragma HLS ARRAY_PARTITION variable=weight_rot complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight_rot complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=input_dil complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=input_dil complete dim=2
-
-// // #pragma HLS DATAFLOW
-
-	for (int row = 0; row < H_fmap_in; row++) {
-		for (int col = 0; col < H_fmap_in; col++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co++) {
-				// weight rot180
-				for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
-					weight_rot[cin][co] = weight[co][cin];
-				}
-// #pragma HLS PIPELINE
-				for (int bi = 0; bi < BATCH_SIZE; bi++) {
-					input_dil[bi][co][row*stride][col*stride] = input[bi][co][row][col];
-				}
-			}
-		}
-	}
-
-	// conv
-	for (int row = 0; row < H_fmap_out; row ++) {
-		for (int col = 0; col < H_fmap_out; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-// #pragma HLS PIPELINE
-					for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-						int row_in = row;	// stride 1 transposed conv, krow = kcol = 0
-						int col_in = col;
-						output[bi][co][row][col] += input_dil[bi][ci][row_in][col_in] * weight_rot[co][ci];
-					}
-				}
-			}
-		}
-	}
-}
-
-// =============
-// Conv gradient
-// =============
-
-// Conv_3x3_grad, padding=1
-void conv_3x3_grad
-(
-	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],		// activation from DDR
-	int8 weight[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// error on-chip
-	int8 output[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],			// gradient on-chip
-
-	int stride,
-	int ch_in,
-	int ch_out,
-	int H_fmap_in,
-	int k_row_in	// weight size (error as weight), k_row_in = H_fmap_in
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=input complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=output complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=output complete dim=2
-
-// // #pragma HLS DATAFLOW
-
-	// weight dilation, k_dil = 1 + (k-1)*s
-	int8 KERNEL_DIL = (k_row_in-1)*stride + 1;
-	int8 weight_dil[BATCH_SIZE][CHANNEL_OUT_T][2*WIDTH][2*WIDTH];	// larger buffer for dilated weights
-	
-	for (int krow = 0; krow < k_row_in; krow ++) {
-		for (int kcol = 0; kcol < k_row_in; kcol ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-// #pragma HLS PIPELINE
-				for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-					weight_dil[bi][co][krow*stride][kcol*stride] = weight[bi][co][krow][kcol];
-				}
-			}
-		}
-	}
-
-	// input 0-padding(1, 1+A, 1, 1+A)
-	// conv
-	for (int krow = 0; krow < KERNEL_DIL; krow ++) {
-		for (int kcol = 0; kcol < KERNEL_DIL; kcol ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-					for (int row = 0; row < 3; row ++) {
-						for (int col = 0; col < 3; col ++) {
-// #pragma HLS PIPELINE
-							for (int bi = 0; bi < BATCH_SIZE; ci ++) {
-								int row_in = row*stride + krow - 1;		// -1 due to 0-padding
-								int col_in = col*stride + kcol - 1;
-								output[co][ci][row][col] += input[bi][ci][row_in][col_in] * weight_dil[bi][co][krow][kcol];
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-// Conv_1x1_grad, padding=0
-void conv_1x1_grad
-(
-	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],		// activation from DDR
-	int8 weight[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// error on-chip
-	int8 output[CHANNEL_OUT_T][CHANNEL_IN_T],				// gradient on-chip
-	
-	int stride,
-	int ch_in,
-	int ch_out,
-	int H_fmap_in,
-	int k_row_in	// weight size (error as weight), k_row_in = H_fmap_in
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=input complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=output complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=output complete dim=2
-
-// // #pragma HLS DATAFLOW
-
-	// weight dilation, k_dil = 1 + (k-1)*s
-	int8 KERNEL_DIL = (k_row_in-1)*stride + 1;
-	int8 weight_dil[BATCH_SIZE][CHANNEL_OUT_T][2*WIDTH][2*WIDTH];	// larger buffer for dilated weights
-	
-	for (int krow = 0; krow < k_row_in; krow ++) {
-		for (int kcol = 0; kcol < k_row_in; kcol ++) {	
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-// #pragma HLS PIPELINE
-				for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-					weight_dil[bi][co][krow*stride][kcol*stride] = weight[bi][co][krow][kcol];
-				}
-			}
-		}
-	}
-
-	// no 0-padding
-	// conv
-	for (int krow = 0; krow < KERNEL_DIL; krow++) {
-		for (int kcol = 0; kcol < KERNEL_DIL; kcol++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co++) {
-				for (int ci = 0; ci < CHANNEL_IN_T; ci++) {
-// #pragma HLS PIPELINE
-					for (int bi = 0; bi < BATCH_SIZE; ci++) {
-						output[co][ci] += input[bi][ci][krow][kcol] * weight_dil[bi][co][krow][kcol];
-					}
-				}
-			}
-		}
-	}
-}
-
-// SGD conv_3x3 weight update
-void SGD_WU_3x3
-(
-	int8 gradient[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	int8 weight_WU[CHANNEL_OUT_T][CHANNEL_IN_T][3][3]
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=gradient complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=gradient complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=weight_WU complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight_WU complete dim=2
-
-	for (int co = 0; co < CHANNEL_OUT_T; co++) {
-		for (int ci = 0; ci < CHANNEL_IN_T; ci++) {
-			for (int krow = 0; krow < 3; krow++) {
-				for (int kcol = 0; kcol < 3; kcol++) {
-// #pragma HLS PIPELINE
-					weight_WU[co][ci][krow][kcol] = weight[co][ci][krow][kcol] - lr*gradient[co][ci][krow][kcol];
-				}
-			}
-		}
-	}
-}
-
-// SGD conv_1x1 weight update
-void SGD_WU_1x1
-(
-	int8 gradient[CHANNEL_OUT_T][CHANNEL_IN_T],
-	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T],
-	int8 weight_WU[CHANNEL_OUT_T][CHANNEL_IN_T]
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=gradient complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=gradient complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=weight_WU complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=weight_WU complete dim=2
-
-	for (int co = 0; co < CHANNEL_OUT_T; co++) {
-		for (int ci = 0; ci < CHANNEL_IN_T; ci++) {
-// #pragma HLS PIPELINE
-			weight_WU[co][ci] = weight[co][ci] - lr*gradient[co][ci];
-		}
-	}
-}
-
-//--------------------
-//   Fused Function
-//--------------------
-
-// Fused bn + relu
-void bn_relu(
-	int8 bn_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, bn_outputs
-	int8 out_buf_DDR[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, off-chip for backprop
-	int1 relu_mask[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// out, relu_mask for relu_bp
-
-	int8 gamma[CHANNEL_OUT_T],
-	int8 beta[CHANNEL_OUT_T],
-
-    int H_fmap
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=bn_inputs complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=out_buf complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=out_buf_DDR complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=relu_mask complete dim=2
-
-// #pragma HLS ARRAY_PARTITION variable=gamma complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=beta complete dim=1
-
-	int8 N = BATCH_SIZE * WIDTH * WIDTH;
-	int8 mu[CHANNEL_OUT_T];
-	int8 sigma[CHANNEL_OUT_T];
-	int8 var[CHANNEL_OUT_T];
-// #pragma HLS ARRAY_PARTITION variable=mu complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=var complete dim=1
-
-// // #pragma HLS DATAFLOW
-
-    // calc mean
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-                    mu[c] = mu[c] + bn_inputs[n][c][row][col]/N;
-				}
-			}
-		}
-	}
-    // calc std variance
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-                	var[c] = var[c] + (bn_inputs[n][c][row][col]-mu[c])*(bn_inputs[n][c][row][col]-mu[c]);
-				}
-			}
-		}
-	}
-    for (int c = 0; c < CHANNEL_OUT_T; c ++){
-		sigma[c] = sqrt(var[c]/N);
-	}
-    // calc affine output
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-            		out_buf[n][c][row][col] = gamma[c]*(bn_inputs[n][c][row][col]-mu[c])/sigma[c] + beta[c];
-					// relu mask
-					if (out_buf[n][c][row][col] > 0) {
-						relu_mask[n][c][row][col] = 1;
-					} else {
-						relu_mask[n][c][row][col] = 0;
-					}
-					out_buf[n][c][row][col] = out_buf[n][c][row][col] * relu_mask[n][c][row][col];
-					out_buf_DDR[n][c][row][col] = out_buf[n][c][row][col];
-				}
-			}
-		}
-	}			
-}
-
-// Fused relu_bp + bn_bp
-inline void bn_relu_bp(
-	int8 error[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH], 			// in
-	int8 bn_inputs_fw[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int1 relu_mask[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],			// out, error_bn
-
-	int8 gamma[CHANNEL_OUT_T],										// in
-	int8 g_gamma[CHANNEL_OUT_T],									// out
-	int8 g_beta[CHANNEL_OUT_T],										// out
-
-	int H_fmap
-)
-{
-// #pragma HLS ARRAY_PARTITION variable=error complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=bn_inputs_fw complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=out_buf complete dim=2
-// #pragma HLS ARRAY_PARTITION variable=relu_mask complete dim=2
-
-// #pragma HLS ARRAY_PARTITION variable=gamma complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=g_gamma complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=g_beta complete dim=1
-
-	int8 N = BATCH_SIZE * WIDTH * WIDTH;
-	int8 mu[CHANNEL_OUT_T];
-	int8 sigma[CHANNEL_OUT_T];
-	int8 var[CHANNEL_OUT_T];
-// #pragma HLS ARRAY_PARTITION variable=mu complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
-// #pragma HLS ARRAY_PARTITION variable=var complete dim=1
-
-// // #pragma HLS DATAFLOW
-
-	// calc mean and relu_bp
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-					// mean
-					mu[c] = mu[c] + bn_inputs_fw[n][c][row][col]/N;
-					// relu
-					error[n][c][row][col] = relu_mask[n][c][row][col] * error[n][c][row][col];
-				}
-			}
-		}
-	}
-	// calc std variance
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-                    var[c] = var[c] + (bn_inputs_fw[n][c][row][col]-mu[c]) * (bn_inputs_fw[n][c][row][col]-mu[c]);
-				}
-			}
-		}
-	}
-    for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-    	sigma[c] = sqrt(var[c]/N);
     }
-	//calc g_gamma and g_beta (also used for error calc)
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-                    g_beta[c] = g_beta[c] + error[n][c][row][col];
-                    g_gamma[c] = g_gamma[c] + error[n][c][row][col] * (bn_inputs_fw[n][c][row][col]-mu[c])/sigma[c];
-				}
+
+	////////////////////////////////////////////////
+	//////////// layer1_0 PG2 //////////////////////
+	LOOP_layer1_0_Conv2:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 2
+				conv_3x3_weight_ptr += 1;
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc	// generate and send out_copy into DDR
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer1_1 PG1 //////////////////////
+	LOOP_layer1_1_Conv1:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 3
+				conv_3x3_weight_ptr += 1;
+
+				// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer1_1 PG2 //////////////////////
+	LOOP_layer1_1_Conv2:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 4
+				conv_3x3_weight_ptr += 1;
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// LAYER 2 Downsample ////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 32;
+	H_fmap_out = 16;
+	in_channels = 64;
+	in_channels_after_pack = 1;
+	out_channels = 128;
+	stride = 2;
+	conv_1x1_weight_ptr = 0;
+
+	////////////////////////////////////////////////
+	//////////// layer2_0 shortcut (conv+bn) ///////
+	LOOP_layer2_0_ConvSC:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 5
+				// ini_sc = 0;
+
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				conv_1x1(
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_sc[ini_sc],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,	// conv+bn shortcut
+					gamma, beta,
+					H_fmap_out
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer2_0 PG1 //////////////////////
+	LOOP_layer2_0_Conv1:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+				// ini = 5
+				conv_3x3_weight_ptr += 1;
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// LAYER 2 ///////////////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 16;
+	H_fmap_out = 16;
+	in_channels = 128;
+	in_channels_after_pack = 1;
+	out_channels = 128;
+	stride = 1;
+
+	////////////////////////////////////////////////
+	//////////// layer2_0 PG2 //////////////////////
+	LOOP_layer2_0_Conv2:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 6
+				conv_3x3_weight_ptr += 1;
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer2_1 PG1 //////////////////////
+	LOOP_layer2_1_Conv1:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 7
+				conv_3x3_weight_ptr += 1;
+
+				// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer2_1 PG2 //////////////////////
+	LOOP_layer2_1_Conv2:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 8
+				conv_3x3_weight_ptr += 1;
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);
+			}
+		}
+    }
+	////////////////////////////////////////////////
+	//////////// LAYER 3 Downsample ////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 16;
+	H_fmap_out = 8;
+	in_channels = 128;
+	in_channels_after_pack = 1;
+	out_channels = 256;
+	stride = 2;
+
+	////////////////////////////////////////////////
+	//////////// layer3_0 shortcut (conv+bn) ///////
+	LOOP_layer3_0_ConvSC:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 9
+				conv_1x1_weight_ptr += 1;
+
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				conv_1x1(
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_sc[ini_sc],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer,	// conv+bn shortcut
+					gamma, beta,
+					H_fmap_out
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer3_0 PG1 //////////////////////
+	LOOP_layer3_0_Conv1:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				// ini = 9
+				conv_3x3_weight_ptr += 1;
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// LAYER 3 ///////////////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 8;
+	H_fmap_out = 8;
+	in_channels = 256;
+	in_channels_after_pack = 1;
+	out_channels = 256;
+	stride = 1;
+
+	////////////////////////////////////////////////
+	//////////// layer3_0 PG2 //////////////////////
+	LOOP_layer3_0_Conv2:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 10
+				conv_3x3_weight_ptr += 1;
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer3_1 PG1 //////////////////////
+	LOOP_layer3_1_Conv1:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 11
+				conv_3x3_weight_ptr += 1;
+
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer3_1 PG2 //////////////////////
+	LOOP_layer3_1_Conv2:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 12
+				conv_3x3_weight_ptr += 1;
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);	// CHANNEL_OUT_T = CHANNEL_IN_T
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// LAYER 4 Downsample ////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 8;
+	H_fmap_out = 4;
+	in_channels = 256;
+	in_channels_after_pack = 1;
+	out_channels = 512;
+	stride = 2;
+
+	////////////////////////////////////////////////
+	//////////// layer4_0 shortcut (conv+bn) ///////
+	LOOP_layer4_0_ConvSC:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 13
+				conv_1x1_weight_ptr += 1;
+
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				conv_1x1(
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_sc[ini_sc],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,	// conv+bn shortcut
+					gamma, beta,
+					H_fmap_out
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer4_0 PG1 //////////////////////
+	LOOP_layer4_0_Conv1:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				// ini = 13
+				conv_3x3_weight_ptr += 1;
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// LAYER 4 ///////////////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 4;
+	H_fmap_out = 4;
+	in_channels = 512;
+	in_channels_after_pack = 1;
+	out_channels = 512;
+	stride = 1;
+
+	////////////////////////////////////////////////
+	//////////// layer4_0 PG2 //////////////////////
+	LOOP_layer4_0_Conv2:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 14
+				conv_3x3_weight_ptr += 1;
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1,  msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);	// CHANNEL_OUT_T = CHANNEL_IN_T
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer4_1 PG1 //////////////////////
+	LOOP_layer4_1_Conv1:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 15
+				conv_3x3_weight_ptr += 1;
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer4_1 PG2 //////////////////////
+	LOOP_layer4_1_Conv2:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 16
+				conv_3x3_weight_ptr += 1;
+
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);
+			}
+		}
+    }
+
+    // Initialize the buffers for pooling and FC layer
+	int8 pool_out_buf[BATCH_SIZE][CHANNEL_OUT_T];
+	int8 linear_out_buf[BATCH_SIZE][10];
+	int8 linear_weight[16][10][CHANNEL_OUT_T];	// FC weight: out_channels/CHANNEL_OUT_T
+
+	out_buf_init:
+	for (int b = 0; b < BATCH_SIZE; b ++) {
+		for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+			pool_out_buf[b][c] = 0;
+		}
+		for (int i = 0; i < 10; i ++) {
+			linear_out_buf[b][i] = 0;
+		}
+	}
+
+	// avgpool
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		avgpool(msb_fmap_tile_buffer_0, pool_out_buf);
+	}
+
+	// FC
+	int fc_weight_ptr = 0;
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		fc_weight_ptr += 1;
+		FC(pool_out_buf, linear_weight[fc_weight_ptr], linear_out_buf);
+	}
+
+	write_output:
+	for (int b = 0; b < BATCH_SIZE; b ++) {
+		for (int i = 0; i < 10; i ++) {
+			output[b][i] = linear_out_buf[b][i];
+		}
+	}
+
+	////////////////////////////////////////////////
+	//////////// CrossEntropy loss /////////////////
+	int8 error[BATCH_SIZE][10];
+	int8 labels[BATCH_SIZE][10];
+
+	error_calc:
+	// MSE for simplicity
+	for (int b = 0; b < BATCH_SIZE; b ++) {
+		for (int i = 0; i < 10; i ++) {
+			error[b][i] = 2 * (linear_out_buf[b][i] - labels[b][i]);
+		}
+	}
+
+
+//////////////////////////////////////////////////////////////////////////////////////
+//////////////		Backward path and Gradient Calc & Weight update		//////////////
+//////////////////////////////////////////////////////////////////////////////////////
+
+
+	int8 linear_weight_transpose[CHANNEL_OUT_T][10];	// FC weight transposed
+
+	// FC_bp
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		FC_bp(error, linear_weight_transpose, pool_out_buf);
+	}
+
+	// avgpool_bp
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		avgpool_bp(pool_out_buf, msb_fmap_tile_buffer_0);
+	}
+
+	printf("ini: %d", ini);
+	printf("conv_3x3_weight_ptr: %d", conv_3x3_weight_ptr);
+	printf("conv_1x1_weight_ptr: %d", conv_1x1_weight_ptr);
+
+	////////////////////////////////////////////////
+	//////////// LAYER 4 ///////////////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 4;
+	H_fmap_out = 4;
+	in_channels = 512;
+	in_channels_after_pack = 1;
+	out_channels = 512;
+	stride = 1;
+
+	ctrl_sc = 0; // do not generate output_copy of shortcut
+
+	////////////////////////////////////////////////
+	//////////// layer4_1 PG2 //////////////////////
+	LOOP_layer4_1_Conv2_bp:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+
+				// ini = 16
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				//////////////////////////
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer4_1 PG1 //////////////////////
+	LOOP_layer4_1_Conv1_bp:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1;	// ini = 15
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				///////////////////////////
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer4_0 PG2 //////////////////////
+	LOOP_layer4_0_Conv2_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1; // ini = 14
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// LAYER 4 Upsample //////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 4;
+	H_fmap_out = 8;
+	in_channels = 512;
+	in_channels_after_pack = 1;
+	out_channels = 256;
+	stride = 2;
+
+	////////////////////////////////////////////////
+	//////////// layer4_0 shortcut (conv+bn) ///////
+	LOOP_layer4_0_ConvSC_bp:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				// ini = 14
+				// conv_1x1_weight_ptr -= 1;
+
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				conv_1x1_rot_bp(	// note the index of shortcut input
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_bp(
+					msb_fmap_tile_buffer_0, out_buf_t1[ini - 2], lsb_fmap_tile_buffer,	// conv+bn shortcut
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				///////////////////////////
+				// conv_1x1_weight_grad_cal
+				conv_1x1_grad(
+					out_buf_t1[ini - 2], msb_fmap_tile_buffer_1, grad_buf_t1,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_1x1(
+					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer4_0 PG1 //////////////////////
+	LOOP_layer4_0_Conv1_bp:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1;	// ini = 13
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// LAYER 3 ///////////////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 8;
+	H_fmap_out = 8;
+	in_channels = 256;
+	in_channels_after_pack = 1;
+	out_channels = 256;
+	stride = 1;
+
+	////////////////////////////////////////////////
+	//////////// layer3_1 PG2 //////////////////////
+	LOOP_layer3_1_Conv2_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+
+				ini -= 1;	// ini = 12
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				//////////////////////////
 			}
 		}
 	}
-	// calc backprop error
-	for (int row = 0; row < H_fmap; row ++) {
-		for (int col = 0; col < H_fmap; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-// #pragma HLS PIPELINE
-				for (int n = 0; n < BATCH_SIZE; n ++) {
-            		out_buf[n][c][row][col] = gamma[c]*error[n][c][row][col]/sigma[c] - gamma[c]*g_beta[c]/(N*sigma[c]) - (bn_inputs_fw[n][c][row][col]-mu[c])*g_gamma[c]/(N*gamma[c]*sigma[c]*sigma[c]);
-				}
+
+	////////////////////////////////////////////////
+	//////////// layer3_1 PG1 //////////////////////
+	LOOP_layer3_1_Conv1_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1;	// ini = 11
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
 			}
 		}
 	}
-}
+
+	////////////////////////////////////////////////
+	//////////// layer3_0 PG2 //////////////////////
+	LOOP_layer3_0_Conv2_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1; // ini = 10
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+			}
+		}
+	}
+
+	////////////////////////////////////////////////
+	//////////// LAYER 3 Upsample //////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 8;
+	H_fmap_out = 16;
+	in_channels = 256;
+	in_channels_after_pack = 1;
+	out_channels = 128;
+	stride = 2;
+
+	////////////////////////////////////////////////
+	//////////// layer3_0 shortcut (conv+bn) ///////
+	LOOP_layer3_0_ConvSC_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				// ini = 10
+				conv_1x1_weight_ptr -= 1;
+
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				conv_1x1_rot_bp(	// note the index of shortcut input
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_bp(
+					msb_fmap_tile_buffer_0, out_buf_t1[ini - 2], lsb_fmap_tile_buffer,	// conv+bn shortcut
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				///////////////////////////
+				// conv_1x1_weight_grad_cal
+				conv_1x1_grad(
+					out_buf_t1[ini - 2], msb_fmap_tile_buffer_1, grad_buf_t1,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_1x1(
+					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+			}
+		}
+	}
+
+	////////////////////////////////////////////////
+	//////////// layer3_0 PG1 //////////////////////
+	LOOP_layer3_0_Conv1_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1;	// ini = 9
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
+			}
+		}
+	}
+
+	////////////////////////////////////////////////
+	//////////// LAYER 2 ///////////////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 16;
+	H_fmap_out = 16;
+	in_channels = 128;
+	in_channels_after_pack = 1;
+	out_channels = 128;
+	stride = 1;
+
+	////////////////////////////////////////////////
+	//////////// layer2_1 PG2 //////////////////////
+	LOOP_layer2_1_Conv2_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+
+				ini -= 1;	// ini = 8
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+			}
+		}
+	}
+
+	////////////////////////////////////////////////
+	//////////// layer2_1 PG1 //////////////////////
+	LOOP_layer2_1_Conv1_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1;	// ini = 7
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+			}
+		}
+	}
+
+	////////////////////////////////////////////////
+	//////////// layer2_0 PG2 //////////////////////
+	LOOP_layer2_0_Conv2_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1; // ini = 6
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+			}
+		}
+	}
+
+	////////////////////////////////////////////////
+	//////////// LAYER 2 Upsample //////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 16;
+	H_fmap_out = 32;
+	in_channels = 128;
+	in_channels_after_pack = 1;
+	out_channels = 64;
+	stride = 2;
+
+	////////////////////////////////////////////////
+	//////////// layer2_0 shortcut (conv+bn) ///////
+	LOOP_layer2_0_ConvSC_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				// ini = 6
+				conv_1x1_weight_ptr -= 1;
+
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				conv_1x1_rot_bp(	// note the index of shortcut input
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				bn_bp(
+					msb_fmap_tile_buffer_0, out_buf_t1[ini - 2], lsb_fmap_tile_buffer,	// conv+bn shortcut
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				///////////////////////////
+				// conv_1x1_weight_grad_cal
+				conv_1x1_grad(
+					out_buf_t1[ini - 2], msb_fmap_tile_buffer_1, grad_buf_t1,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_1x1(
+					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+			}
+		}
+	}
+
+	////////////////////////////////////////////////
+	//////////// layer2_0 PG1 //////////////////////
+	LOOP_layer2_0_Conv1_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1;	// ini = 5
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
+			}
+		}
+	}
+
+	////////////////////////////////////////////////
+	//////////// LAYER 1 ///////////////////////////
+	////////////////////////////////////////////////
+
+	H_fmap_in = 32;
+	H_fmap_out = 32;
+	in_channels = 64;
+	in_channels_after_pack = 1;
+	out_channels = 64;
+	stride = 1;
+
+	////////////////////////////////////////////////
+	//////////// layer1_1 PG2 //////////////////////
+	LOOP_layer1_1_Conv2_bp:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+
+				ini -= 1; // ini = 4
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer1_1 PG1 //////////////////////
+	LOOP_layer1_1_Conv1_bp:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1;	// ini = 3
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer1_0 PG2 //////////////////////
+	LOOP_layer1_0_Conv2_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				ini -= 1;	// ini = 2
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	//////////// layer1_0 PG1 //////////////////////
+	LOOP_layer1_0_Conv1_bp:
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1;	// ini = 1
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
+			}
+		}
+    }
+
+	////////////////////////////////////////////////
+	/////////// Conv 1 + bn 1 + relu 1 /////////////
+	////////////////////////////////////////////////
+
+	in_channels = 64;
+	in_channels_after_pack = 1;
+	out_channels = 64;
+	H_fmap_in =32;
+	H_fmap_out = 32;
+	stride = 1;
+
+    LOOP_Conv1_bp:
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini -= 1;	// ini = 0
+				conv_3x3_weight_ptr -= 1;
+
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, in_channels, out_channels, H_fmap_in, H_fmap_out
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+/*
+				// get image first
+					for (int c = 0; c < 3; c ++) {
+						for (int row = 0; row < 32; row ++) {
+							for (int col = 0; col < 32; col ++) {
+								msb_fmap_tile_buffer_0[b][c][row][col] = image[b][c][row][col];
+							}
+						}
+					}
+				}
+*/
+				conv_3x3_grad(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, in_channels, out_channels, H_fmap_in,
+					H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+			}
+		}
+    }
+}	// end FracBNN_T

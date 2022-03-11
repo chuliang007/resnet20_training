@@ -1,6 +1,6 @@
 #include "bnn.h"
 #include "layer.h"
-// #include "dimension_def.h"
+#include "dimension_def.h"
 
 using namespace std;
 
@@ -28,14 +28,14 @@ void FracNet_T(
 	int8 conv_3x3_weight_all[NUM_3x3_WT][CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
 	int8 conv_1x1_weight_all[NUM_1x1_WT][CHANNEL_OUT_T][CHANNEL_IN_T],
 
-	int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// output
+	int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// output activation
     int8 out_buf_t1[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],
-	int8 out_buf_sc[NUM_SC][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// shortcut output
+	int8 out_buf_sc[NUM_SC][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// shortcut output activation
 
     int1 relu_mask[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH]		// relu mask for backprop
 )
 {
-#pragma HLS INTERFACE m_axi depth=12288 port=image offset=slave bundle=IMG	// 4*3*32*32
+#pragma HLS INTERFACE m_axi depth=12288 port=image offset=slave bundle=IMG	// 4*3*32*32 = 12288
 #pragma HLS INTERFACE m_axi depth=40 port=output offset=slave bundle=RESULT	// 4*10
 
 #pragma HLS INTERFACE m_axi depth=2755584 port=conv_3x3_weight_all offset=slave bundle=conv_3x3_weight_all	// 1196*4*64*3*3 = 2755584
@@ -165,10 +165,11 @@ void FracNet_T(
     for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
 				// ini = 0
+
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
@@ -203,14 +204,14 @@ void FracNet_T(
 
 				ini += 1;	// ini = 1
 				conv_3x3_weight_ptr += 1;
+
 				// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
 				identity_shortcut(
 					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer,
 					H_fmap_in
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
@@ -236,8 +237,7 @@ void FracNet_T(
 				conv_3x3_weight_ptr += 1;
 
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
@@ -265,14 +265,14 @@ void FracNet_T(
 
 				ini += 1;	// ini = 3
 				conv_3x3_weight_ptr += 1;
+
 				// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
 				identity_shortcut(
 					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
 					H_fmap_in
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
@@ -298,8 +298,7 @@ void FracNet_T(
 				conv_3x3_weight_ptr += 1;
 
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
@@ -341,8 +340,7 @@ void FracNet_T(
 				// ini_sc = 0;
 
 				load_conv_1x1_weights(
-					conv_1x1_weight_tile_buffer, conv_1x1_weight_all,
-					conv_1x1_weight_ptr
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
 				conv_1x1(
 					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_sc[ini_sc],
@@ -365,9 +363,9 @@ void FracNet_T(
 			for (int b = 0; b < BATCH_SIZE; b ++) {
 				// ini = 5
 				conv_3x3_weight_ptr += 1;
+
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
@@ -404,8 +402,7 @@ void FracNet_T(
 				conv_3x3_weight_ptr += 1;
 
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
@@ -433,14 +430,14 @@ void FracNet_T(
 
 				ini += 1;	// ini = 7
 				conv_3x3_weight_ptr += 1;
+
 				// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
 				identity_shortcut(
 					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
 					H_fmap_in
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
@@ -466,8 +463,7 @@ void FracNet_T(
 				conv_3x3_weight_ptr += 1;
 
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
@@ -507,8 +503,7 @@ void FracNet_T(
 				conv_1x1_weight_ptr += 1;
 
 				load_conv_1x1_weights(
-					conv_1x1_weight_tile_buffer, conv_1x1_weight_all,
-					conv_1x1_weight_ptr
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
 				conv_1x1(
 					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_sc[ini_sc],
@@ -534,8 +529,7 @@ void FracNet_T(
 				conv_3x3_weight_ptr += 1;
 
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
@@ -572,8 +566,7 @@ void FracNet_T(
 				conv_3x3_weight_ptr += 1;
 
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
@@ -601,14 +594,14 @@ void FracNet_T(
 
 				ini += 1;	// ini = 11
 				conv_3x3_weight_ptr += 1;
+
 				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
 				identity_shortcut(
 					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
 					H_fmap_in
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
@@ -634,8 +627,7 @@ void FracNet_T(
 				conv_3x3_weight_ptr += 1;
 
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
@@ -676,8 +668,7 @@ void FracNet_T(
 				conv_1x1_weight_ptr += 1;
 
 				load_conv_1x1_weights(
-					conv_1x1_weight_tile_buffer, conv_1x1_weight_all,
-					conv_1x1_weight_ptr
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
 				conv_1x1(
 					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_sc[ini_sc],
@@ -703,8 +694,7 @@ void FracNet_T(
 				conv_3x3_weight_ptr += 1;
 
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
@@ -741,8 +731,7 @@ void FracNet_T(
 				conv_3x3_weight_ptr += 1;
 
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
@@ -776,8 +765,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
@@ -803,8 +791,7 @@ void FracNet_T(
 				conv_3x3_weight_ptr += 1;
 
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
@@ -926,8 +913,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -941,7 +927,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				// end gradient calculation
 				//////////////////////////
@@ -965,8 +951,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -985,7 +970,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 			}
 		}
@@ -1007,8 +992,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
@@ -1022,7 +1006,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 			}
 		}
@@ -1050,8 +1034,7 @@ void FracNet_T(
 				// conv_1x1_weight_ptr -= 1;
 
 				load_conv_1x1_weights(
-					conv_1x1_weight_tile_buffer, conv_1x1_weight_all,
-					conv_1x1_weight_ptr
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
 				conv_1x1_rot_bp(	// note the index of shortcut input
 					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -1070,7 +1053,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_1x1(
-					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_tile_buffer
+					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
 			}
 		}
@@ -1092,8 +1075,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
@@ -1107,7 +1089,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				// end gradient calculation
 				///////////////////////////
@@ -1152,8 +1134,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -1167,7 +1148,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				// end gradient calculation
 				//////////////////////////
@@ -1191,8 +1172,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -1210,7 +1190,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 			}
 		}
@@ -1232,8 +1212,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
@@ -1247,7 +1226,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 			}
 		}
@@ -1275,8 +1254,7 @@ void FracNet_T(
 				conv_1x1_weight_ptr -= 1;
 
 				load_conv_1x1_weights(
-					conv_1x1_weight_tile_buffer, conv_1x1_weight_all,
-					conv_1x1_weight_ptr
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
 				conv_1x1_rot_bp(	// note the index of shortcut input
 					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -1295,7 +1273,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_1x1(
-					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_tile_buffer
+					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
 			}
 		}
@@ -1317,8 +1295,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
@@ -1332,7 +1309,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				// end gradient calculation
 				///////////////////////////
@@ -1377,8 +1354,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -1392,7 +1368,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				// end gradient calculation
 				///////////////////////////
@@ -1416,8 +1392,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -1435,7 +1410,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 			}
 		}
@@ -1457,8 +1432,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
@@ -1472,7 +1446,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 			}
 		}
@@ -1500,8 +1474,7 @@ void FracNet_T(
 				conv_1x1_weight_ptr -= 1;
 
 				load_conv_1x1_weights(
-					conv_1x1_weight_tile_buffer, conv_1x1_weight_all,
-					conv_1x1_weight_ptr
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
 				conv_1x1_rot_bp(	// note the index of shortcut input
 					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -1520,7 +1493,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_1x1(
-					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_tile_buffer
+					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
 				);
 			}
 		}
@@ -1542,8 +1515,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
@@ -1557,7 +1529,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				// end gradient calculation
 				///////////////////////////
@@ -1602,8 +1574,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -1617,7 +1588,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 			}
 		}
@@ -1639,8 +1610,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -1654,7 +1624,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				// end gradient calculation
 				///////////////////////////
@@ -1683,8 +1653,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
@@ -1698,7 +1667,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 			}
 		}
@@ -1720,8 +1689,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
@@ -1735,7 +1703,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				// end gradient calculation
 				///////////////////////////
@@ -1772,8 +1740,7 @@ void FracNet_T(
 					H_fmap_out
 				);
 				load_conv_3x3_weights(
-					conv_3x3_weight_tile_buffer, conv_3x3_weight_all,
-					conv_3x3_weight_ptr
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
@@ -1798,7 +1765,7 @@ void FracNet_T(
 					H_fmap_in
 				);
 				SGD_WU_3x3(
-					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_tile_buffer
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 			}
 		}
