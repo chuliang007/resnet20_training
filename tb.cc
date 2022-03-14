@@ -8,25 +8,22 @@
 
 using namespace std;
 
-#define NUM_ACT 1382
-#define NUM_SC 168
-#define NUM_3x3_WT 1382
-#define NUM_1x1_WT 168
-
 #define BATCH_SIZE 4
-#define CHANNEL_IN_T 64
-#define CHANNEL_OUT_T 64
-#define WIDTH_T 33
 
-float image[BATCH_SIZE][3][32][32];
-int8 output[BATCH_SIZE][10];
-int8 conv_3x3_weight_all[NUM_3x3_WT][CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
-int8 conv_1x1_weight_all[NUM_1x1_WT][CHANNEL_OUT_T][CHANNEL_IN_T];
-int8 msb_fmap[NUM_ACT][BATCH_SIZE][CHANNEL_IN_T][WIDTH_T][WIDTH_T];
-int8 lsb_fmap[NUM_SC][BATCH_SIZE][CHANNEL_IN_T][WIDTH_T][WIDTH_T];
-int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T];
-int8 out_buf_t1[NUM_SC][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T];
-int1 relu_mask[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH_T][WIDTH_T];
+float image[4][3][32][32];
+
+int8 image_hw[4][3][32][32];
+int8 output[4][10];
+
+int8 conv_3x3_weight_all[1196][64][64][3][3];
+int8 conv_1x1_weight_all[168][64][64];
+int8 linear_weight_hw[8][10][64];
+
+int8 out_buf_t0[1196][4][64][33][33];
+int8 out_buf_t1[1196][4][64][33][33];
+int8 out_buf_sc[168][4][64][33][33];
+
+int1 relu_mask[1196][4][64][33][33];
 
 // conv + bn_sw + relu_sw
 /* forward */
@@ -391,6 +388,7 @@ Parameterized templates
 =======================
 */ 
 
+/*
 // rot180_sw for Conv weights
 template <int BATCH, int CHANNEL, int HEIGHT, int WIDTH>
 void rot180_sw(
@@ -400,10 +398,10 @@ void rot180_sw(
 {
 	float mat_tmp[BATCH][CHANNEL][HEIGHT][WIDTH];
 
-	for (int n=0; n<BATCH; n++){
-        for (int c=0; c<CHANNEL; c++){
-			for (int row=0; row<HEIGHT; row++){
-				for (int col=0; col<WIDTH; col++){
+	for (int n = 0; n < BATCH; n++) {
+        for (int c = 0; c < CHANNEL; c++) {
+			for (int row = 0; row < HEIGHT; row++) {
+				for (int col = 0; col < WIDTH; col++) {
 					mat_tmp[n][c][row][col] = mat[n][c][HEIGHT-row-1][WIDTH-col-1];
 					mat_rot[c][n][row][col] = mat_tmp[n][c][row][col];
 				}
@@ -411,46 +409,47 @@ void rot180_sw(
 		}
 	}
 }
+*/
 
 // Batch Norm
-template <int BATCH, int CHANNEL, int HEIGHT, int WIDTH>
+template <int BATCH, int CHANNEL, int HEIGHT_IN, int WIDTH_IN>
 void bn_sw(
-	float bn_sw_inputs[BATCH][CHANNEL][HEIGHT][WIDTH],		// in
-	float bn_sw_outputs[BATCH][CHANNEL][HEIGHT][WIDTH],		// out
+	float bn_sw_inputs[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN],		// in
+	float bn_sw_outputs[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN],		// out
 	float gamma[CHANNEL],
 	float beta[CHANNEL]
 )
 {
-    float N = BATCH * HEIGHT * WIDTH;
+    float N = BATCH * HEIGHT_IN * WIDTH_IN;
 	float mu[CHANNEL];
 	float sigma[CHANNEL];
 
-    for (int n=0; n<BATCH; n++){
-        for (int c=0; c<CHANNEL; c++){
-            for (int row=0; row<HEIGHT; row++){
-                for (int col=0; col<WIDTH; col++){
+    for (int n = 0; n < BATCH; n++) {
+        for (int c = 0; c < CHANNEL; c++) {
+            for (int row = 0; row < HEIGHT_IN; row++) {
+                for (int col = 0; col < WIDTH_IN; col++) {
                     mu[c] = mu[c] + bn_sw_inputs[n][c][row][col]/N;
 				}
 			}
 		}
 	}
-    for (int n=0; n<BATCH; n++){
-        for (int c=0; c<CHANNEL; c++){
-            for (int row=0; row<HEIGHT; row++){
-                for (int col=0; col<WIDTH; col++){
+    for (int n = 0; n < BATCH; n++) {
+        for (int c = 0; c < CHANNEL; c++) {
+            for (int row = 0; row < HEIGHT_IN; row++) {
+                for (int col = 0; col < WIDTH_IN; col++) {
                     sigma[c] = sigma[c] + pow(bn_sw_inputs[n][c][row][col]-mu[c],2);
 				}
 			}
 		}
 	}
     //sigma = sqrt(sigma/N);
-	for (int c=0; c<CHANNEL; c++){
+	for (int c = 0; c < CHANNEL; c++) {
 		sigma[c] = sqrt(sigma[c]/N);
 	}
-	for (int n=0; n<BATCH; n++){
-		for (int c=0; c<CHANNEL; c++){
-			for (int row=0; row<HEIGHT; row++){
-				for (int col=0; col<WIDTH; col++){
+	for (int n = 0; n < BATCH; n++){
+		for (int c = 0; c < CHANNEL; c++) {
+			for (int row = 0; row < HEIGHT_IN; row++) {
+				for (int col = 0; col < WIDTH_IN; col++) {
             		bn_sw_outputs[n][c][row][col] = gamma[c]*(bn_sw_inputs[n][c][row][col]-mu[c])/sigma[c] + beta[c];
 				}
 			}
@@ -459,57 +458,57 @@ void bn_sw(
 }
 
 // Batch Norm Back-prop
-template <int BATCH, int CHANNEL, int HEIGHT, int WIDTH>
+template <int BATCH, int CHANNEL, int HEIGHT_IN, int WIDTH_IN>
 void bn_bp_sw(
-	float error[BATCH][CHANNEL][HEIGHT][WIDTH], 			// in
-	float bn_sw_inputs_fw[BATCH][CHANNEL][HEIGHT][WIDTH],	// in
-	float error_bn_sw[BATCH][CHANNEL][HEIGHT][WIDTH],		// out
+	float error[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN], 			// in
+	float bn_sw_inputs_fw[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN],	// in
+	float error_bn_sw[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN],		// out
 
 	float gamma[CHANNEL],									// in
 	float g_gamma[CHANNEL],									// out
 	float g_beta[CHANNEL]									// out
 )
 {
-	float N = BATCH * HEIGHT * WIDTH;
+	float N = BATCH * HEIGHT_IN * WIDTH_IN;
 	float mu[CHANNEL];
 	float sigma[CHANNEL];
 
-    for (int n=0; n<BATCH; n++){
-        for (int c=0; c<CHANNEL; c++){
-            for (int row=0; row<HEIGHT; row++){
-                for (int col=0; col<WIDTH; col++){
+    for (int n = 0; n < BATCH; n++) {
+        for (int c = 0; c < CHANNEL; c++) {
+            for (int row = 0; row < HEIGHT_IN; row++) {
+                for (int col = 0; col < WIDTH_IN; col++) {
                     mu[c] = mu[c] + bn_sw_inputs_fw[n][c][row][col]/N;
 				}
 			}
 		}
 	}
-    for (int n=0; n<BATCH; n++){
-        for (int c=0; c<CHANNEL; c++){
-            for (int row=0; row<HEIGHT; row++){
-                for (int col=0; col<WIDTH; col++){
+    for (int n = 0; n < BATCH; n++) {
+        for (int c = 0; c < CHANNEL; c++) {
+            for (int row = 0; row < HEIGHT_IN; row++) {
+                for (int col = 0; col < WIDTH_IN; col++) {
                     sigma[c] = sigma[c] + pow(bn_sw_inputs_fw[n][c][row][col]-mu[c],2);
 				}
 			}
 		}
 	}
     //sigma = sqrt(sigma/N);
-	for (int c=0; c<CHANNEL; c++){
+	for (int c = 0; c < CHANNEL; c++) {
 		sigma[c] = sqrt(sigma[c]/N);
 	}
-    for (int n=0; n<BATCH; n++){
-        for (int c=0; c<CHANNEL; c++){
-            for (int row=0; row<HEIGHT; row++){
-                for (int col=0; col<WIDTH; col++){
+    for (int n = 0; n < BATCH; n++) {
+        for (int c = 0; c < CHANNEL; c++) {
+            for (int row = 0; row < HEIGHT_IN; row++) {
+                for (int col = 0; col < WIDTH_IN; col++) {
                     g_beta[c] = g_beta[c] + error[n][c][row][col];
                     g_gamma[c] = g_gamma[c] + error[n][c][row][col]*(bn_sw_inputs_fw[n][c][row][col]-mu[c])/sigma[c];
 				}
 			}
 		}
 	}
-    for (int n=0; n<BATCH; n++){
-        for (int c=0; c<CHANNEL; c++){
-            for (int row=0; row<HEIGHT; row++){
-                for (int col=0; col<WIDTH; col++){
+    for (int n = 0; n < BATCH; n++) {
+        for (int c = 0; c < CHANNEL; c++) {
+            for (int row = 0; row < HEIGHT_IN; row++) {
+                for (int col = 0; col < WIDTH_IN; col++) {
             		error_bn_sw[n][c][row][col] = gamma[c]*error[n][c][row][col]/sigma[c] - gamma[c]*g_beta[c]/(N*sigma[c]) - (bn_sw_inputs_fw[n][c][row][col]-mu[c])*g_gamma[c]/(N*gamma[c]*(pow(sigma[c],2)));
 				}
 			}
@@ -518,16 +517,16 @@ void bn_bp_sw(
 }
 
 // relu_sw
-template <int BATCH, int CHANNEL, int HEIGHT, int WIDTH>
+template <int BATCH, int CHANNEL, int HEIGHT_IN, int WIDTH_IN>
 void relu_sw(
-	float input[BATCH][CHANNEL][HEIGHT][WIDTH],   // in
-	float output[BATCH][CHANNEL][HEIGHT][WIDTH]   // out
+	float input[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN],   // in
+	float output[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN]   // out
 )
 {
-	for (int n=0; n<BATCH; n++) {
-		for (int c=0; c<CHANNEL; c++) {
-			for (int row=0; row<HEIGHT; row++) {
-				for (int col=0; col<WIDTH; col++) {
+	for (int n = 0; n < BATCH; n++) {
+		for (int c = 0; c < CHANNEL; c++) {
+			for (int row = 0; row < HEIGHT_IN; row++) {
+				for (int col = 0; col < WIDTH_IN; col++) {
 					if (input[n][c][row][col] > 0) {
 						output[n][c][row][col] = input[n][c][row][col];
 					} else {
@@ -540,17 +539,17 @@ void relu_sw(
 }
 
 // relu_sw Back-prop
-template <int BATCH, int CHANNEL, int HEIGHT, int WIDTH>
+template <int BATCH, int CHANNEL, int HEIGHT_IN, int WIDTH_IN>
 void relu_bp_sw(
-	float error[BATCH][CHANNEL][HEIGHT][WIDTH],  		// error in
-	float input_fw[BATCH][CHANNEL][HEIGHT][WIDTH], 		// activation in forward
-	float error_relu_sw[BATCH][CHANNEL][HEIGHT][WIDTH]     // error out
+	float error[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN],  		// error in
+	float input_fw[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN], 		// activation in forward
+	float error_relu_sw[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN]     // error out
 )
 {
-	for (int n=0; n<BATCH; n++) {
-		for (int c=0; c<CHANNEL; c++) {
-			for (int row=0; row<HEIGHT; row++) {
-				for (int col=0; col<WIDTH; col++) {
+	for (int n = 0; n < BATCH; n++) {
+		for (int c = 0; c < CHANNEL; c++) {
+			for (int row = 0; row < HEIGHT_IN; row++) {
+				for (int col = 0; col < WIDTH_IN; col++) {
 					if (input_fw[n][c][row][col] > 0) {
 						error_relu_sw[n][c][row][col] = error[n][c][row][col];
 					} else {
@@ -574,12 +573,12 @@ void avgpool(
 	// int WIDTH_OUT = WIDTH_IN/stride;
 	int stride2= pow(stride,2);
 
-	for (int n=0; n<BATCH; n++) {
-		for (int c=0; c<CHANNEL; c++) {
-			for (int row=0; row<HEIGHT_OUT; row++) {
-				for (int col=0; col<WIDTH_OUT; col++) {
-					for (int s=0; s<stride; s++) {
-						for (int ss=0; ss<stride; s++) {
+	for (int n = 0; n < BATCH; n++) {
+		for (int c = 0; c < CHANNEL; c++) {
+			for (int row = 0; row < HEIGHT_OUT; row++) {
+				for (int col = 0; col < WIDTH_OUT; col++) {
+					for (int s = 0; s < stride; s++) {
+						for (int ss = 0; ss < stride; s++) {
 							avg_outputs[n][c][row][col] += avg_inputs[n][c][stride*row+s][stride*col+ss]/stride2;
 						}
 					}
@@ -601,12 +600,12 @@ void avgpool_bp(
 	// int WIDTH_OUT = WIDTH_IN*stride;
 	int stride2 = pow(stride,2);
 
-	for (int n=0; n<BATCH; n++) {
-		for (int c=0; c<CHANNEL; c++) {
-			for (int row=0; row<HEIGHT_OUT; row++) {
-				for (int col=0; col<WIDTH_OUT; col++) {
-					for (int s=0; s<stride; s++) {
-						for (int ss=0; ss<stride; ss++) {
+	for (int n = 0; n < BATCH; n++) {
+		for (int c = 0; c < CHANNEL; c++) {
+			for (int row = 0; row < HEIGHT_OUT; row++) {
+				for (int col = 0; col < WIDTH_OUT; col++) {
+					for (int s = 0; s < stride; s++) {
+						for (int ss = 0; ss < stride; ss++) {
 							error_avg[n][c][stride*row+s][stride*col+ss] = error[n][c][row][col]/stride2;
 						}
 					}
@@ -617,20 +616,18 @@ void avgpool_bp(
 }
 
 // shortcut_sw- identity branch
-template <int BATCH, int CHANNEL, int HEIGHT, int WIDTH>
+template <int BATCH, int CHANNEL, int HEIGHT_IN, int WIDTH_IN>
 void shortcut_sw(
-	float input_a[BATCH][CHANNEL][HEIGHT][WIDTH],
-	float input_b[BATCH][CHANNEL][HEIGHT][WIDTH],
-	float output[BATCH][CHANNEL][HEIGHT][WIDTH]
+	float input_a[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN],
+	float input_b[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN],
+	float output[BATCH][CHANNEL][HEIGHT_IN][WIDTH_IN]
 )
 {
 	for (int n = 0; n < BATCH; n++) {
 		for (int c = 0; c < CHANNEL; c++) {
-			for (int row = 0; row < HEIGHT; row++) {
-				for (int col = 0; col < WIDTH; col++) {
-					float x = input_a[n][c][row][col];
-					float y = input_b[n][c][row][col];
-					output[n][c][row][col] = x + y;
+			for (int row = 0; row < HEIGHT_IN; row++) {
+				for (int col = 0; col < WIDTH_IN; col++) {
+					output[n][c][row][col] = input_a[n][c][row][col] + input_b[n][c][row][col];
 				}
 			}
 		}
@@ -1254,7 +1251,7 @@ void backward(float error[BATCH_SIZE][10]) // right size ?
 //--------------------
 //  Gradient GeMM
 //--------------------
-/*
+
 void gradient(float error[BATCH_SIZE][512][10]) 
 {
 	////////////////////////////////////
@@ -1387,8 +1384,6 @@ void gradient(float error[BATCH_SIZE][512][10])
 	// bn1_weight              = bn1_weight              - 0.01 * bn1_weight;
 	// bn1_bias                = bn1_bias                - 0.01 * bn1_bias;
 }
-*/
-
 
 ///////////////////////////////////////////////////////////////////////////////
 ////////////////////////  main function for testbench  ////////////////////////
@@ -1397,19 +1392,34 @@ void gradient(float error[BATCH_SIZE][512][10])
 //#define SW_TEST
 int main(int argc, char **argv)
 {
-	int8 image_hw[4][3][32][32] = {0};
+	image_hw[4][3][32][32] = {0};
+	linear_weight_hw[8][10][64] = {0};
+	relu_mask[1196][4][64][33][33] = {0};
 
 		for(int j = 0; j < 3; j ++){
 			for(int row = 0; row < 32; row ++){
 				for(int col = 0; col < 32; col ++){
-					for(int b = 0; b < 4; b ++){
+					for(int b = 0; b < BATCH_SIZE; b ++){
 						image_hw[b][j][row][col] = image[b][j][row][col];
 					}
 				}
 			}
 		}
-	FracNet_T(image_hw, output,
-			  conv_3x3_weight_all, conv_1x1_weight_all,
-			  msb_fmap, lsb_fmap,
-			  out_buf_t0, out_buf_t1, relu_mask);
+
+	FracNet_T(
+		image_hw,
+		output,
+
+		conv_3x3_weight_all,
+		conv_1x1_weight_all,
+		linear_weight_hw,
+
+		out_buf_t0,
+		out_buf_t1,
+	    out_buf_sc,
+
+		relu_mask
+	);
+
+	return 0;
 }
