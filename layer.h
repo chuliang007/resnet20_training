@@ -396,8 +396,6 @@ void conv_3x3
 	int8 output_DDR[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// activations off-chip for backprop
 	
 	int stride,
-	int ch_in,
-	int ch_out,
 	int H_fmap_in,
 	int H_fmap_out
 )
@@ -442,8 +440,6 @@ void conv_1x1
 	int8 output_DDR[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// activations off-chip for backprop
 
 	int stride,
-	int ch_in,
-	int ch_out,
 	int H_fmap_in,
 	int H_fmap_out
 )
@@ -485,8 +481,6 @@ void conv_3x3_rot_bp
 	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// error out on-chip
 
 	int stride,
-	int ch_in,
-	int ch_out,
 	int H_fmap_in,
 	int H_fmap_out
 )
@@ -559,8 +553,6 @@ void conv_1x1_rot_bp
 	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// error out on-chip
 
 	int stride,
-	int ch_in,
-	int ch_out,
 	int H_fmap_in,
 	int H_fmap_out
 )
@@ -628,8 +620,6 @@ void conv_3x3_grad
 	int8 output[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],			// gradient on-chip
 
 	int stride,
-	int ch_in,
-	int ch_out,
 	int H_fmap_in
 	// int k_row_in	// weight size (error as weight), k_row_in = H_fmap_in
 )
@@ -690,8 +680,6 @@ void conv_1x1_grad
 	int8 output[CHANNEL_OUT_T][CHANNEL_IN_T],				// gradient on-chip
 	
 	int stride,
-	int ch_in,
-	int ch_out,
 	int H_fmap_in
 	// int k_row_in	// weight size (error as weight), k_row_in = H_fmap_in
 )
