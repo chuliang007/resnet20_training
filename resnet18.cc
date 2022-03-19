@@ -74,13 +74,11 @@ void FracNet_T(
 
 #pragma HLS ALLOCATION function instances=SGD_WU_3x3 limit=1
 #pragma HLS ALLOCATION function instances=SGD_WU_1x1 limit=1
+
 /*
 // array partition
-#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_0 complete dim=1
 #pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_0 complete dim=2
-#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_1 complete dim=1
 #pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_1 complete dim=2
-#pragma HLS ARRAY_PARTITION variable=lsb_fmap_tile_buffer complete dim=1
 #pragma HLS ARRAY_PARTITION variable=lsb_fmap_tile_buffer complete dim=2
 
 #pragma HLS ARRAY_PARTITION variable=conv_3x3_weight_tile_buffer complete dim=1
@@ -89,7 +87,7 @@ void FracNet_T(
 #pragma HLS ARRAY_PARTITION variable=conv_1x1_weight_tile_buffer complete dim=2
 
 #pragma HLS ARRAY_PARTITION variable=pool_out_buf complete dim=2
-#pragma HLS ARRAY_PARTITION variable=linear_out_buf complete dim=2
+#pragma HLS ARRAY_PARTITION variable=linear_weight_tile_buffer complete dim=2
 
 #pragma HLS ARRAY_PARTITION variable=relu_mask complete dim=1
 #pragma HLS ARRAY_PARTITION variable=relu_mask complete dim=2
@@ -109,17 +107,17 @@ void FracNet_T(
 	for (int c = 0; c < CHANNEL_IN_T; c ++) {
 		for (int b = 0; b < BATCH_SIZE; b ++) {
 			pool_out_buf[b][c] = 0;
-#pragma HLS pipeline
-			for (int ii=0; ii < 10; ii++) {
-				linear_out_buf[b][ii] = 0;
-				linear_weight_tile_buffer[ii][c] = 0;
-			}
 			for (int i = 0; i < WIDTH; i ++) {
 				for (int j = 0; j < WIDTH; j ++) {
 					msb_fmap_tile_buffer_0[b][c][i][j] = 0;
 					msb_fmap_tile_buffer_1[b][c][i][j] = 0;
 					lsb_fmap_tile_buffer[b][c][i][j] = 0;
 				}
+			}
+#pragma HLS pipeline
+			for (int ii=0; ii < 10; ii++) {
+				linear_out_buf[b][ii] = 0;
+				linear_weight_tile_buffer[ii][c] = 0;
 			}
 		}
 	}
