@@ -7,8 +7,8 @@
 #include <fstream>
 #include <hls_math.h>
 #include "dimension_def.h"
-#include "weights_fracnet_64.h"
-#include "conv_weights.h"
+// #include "weights_fracnet_64.h"
+// #include "conv_weights.h"
 
 //--------------------
 //   Utils Function
