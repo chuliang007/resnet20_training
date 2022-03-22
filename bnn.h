@@ -16,15 +16,14 @@ void FracNet_T(
 	int8 image[4][3][32][32],
 	int8 output[4][10],
 
-	int8 conv_3x3_weight_all[1196][64][64][3][3],
-	int8 conv_1x1_weight_all[168][64][64],
-	int8 linear_weight[8][10][64],
+	int8 conv_3x3_weight_all[299][64][64][3][3],
+	int8 conv_1x1_weight_all[42][64][64],
+	int8 linear_weight[8][512],
 
-	int8 out_buf_t0[1364][4][64][33][33],
-	int8 out_buf_t1[1364][4][64][33][33],
-    int8 out_buf_sc[168][4][64][33][33],
+	int8 out_buf_t0[61][4][64][33][33],
+	int8 out_buf_t1[61][4][64][33][33],
 
-	int1 relu_mask[1364][4][64][33][33]
+	int1 relu_mask[61][4][64][33][33]
 );
 
 #endif

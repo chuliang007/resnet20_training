@@ -15,15 +15,14 @@ float image[4][3][32][32];
 int8 image_hw[4][3][32][32];
 int8 output[4][10];
 
-int8 conv_3x3_weight_all[1196][64][64][3][3];
-int8 conv_1x1_weight_all[168][64][64];
-int8 linear_weight_hw[8][10][64];
+int8 conv_3x3_weight_all[299][64][64][3][3];
+int8 conv_1x1_weight_all[42][64][64];
+int8 linear_weight_hw[8][512];
 
-int8 out_buf_t0[1196][4][64][33][33];
-int8 out_buf_t1[1196][4][64][33][33];
-int8 out_buf_sc[168][4][64][33][33];
+int8 out_buf_t0[61][4][64][33][33];
+int8 out_buf_t1[61][4][64][33][33];
 
-int1 relu_mask[1196][4][64][33][33];
+int1 relu_mask[61][4][64][33][33];
 
 // conv + bn_sw + relu_sw
 /* forward */
@@ -1394,7 +1393,7 @@ int main(int argc, char **argv)
 {
 	image_hw[4][3][32][32] = {0};
 	linear_weight_hw[8][10][64] = {0};
-	relu_mask[1196][4][64][33][33] = {0};
+	relu_mask[299][4][64][33][33] = {0};
 
 		for(int j = 0; j < 3; j ++){
 			for(int row = 0; row < 32; row ++){
@@ -1416,7 +1415,6 @@ int main(int argc, char **argv)
 
 		out_buf_t0,
 		out_buf_t1,
-	    out_buf_sc,
 
 		relu_mask
 	);

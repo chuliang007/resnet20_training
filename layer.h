@@ -249,9 +249,10 @@ void bn_bp(
 
 // AvgPool
 void avgpool(
-	int8 avg_inputs[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T] 						// out, avg_outputs
+	int8 avg_inputs[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],		// in
+	int8 out_buf[BATCH_SIZE][512],						// out, avg_outputs
 
+	int  c_out
 	//int stride,
 	//int H_fmap
 )
@@ -261,13 +262,12 @@ void avgpool(
 	// int H_fmap_OUT = H_fmap/stride;
 	// int stride2 = stride*stride;
 	// int8 accum;
-
-	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+	for (int c = 0; c < CHANNEL_IN_T; c ++) {
 		for (int s = 0; s < 4; s ++) {
 			for (int ss = 0; ss < 4; ss ++) {
 // #pragma HLS PIPELINE
 				for (int n = 0; n < BATCH_SIZE; n ++) {
-					out_buf[n][c] += avg_inputs[n][c][s][ss]/16;
+					out_buf[n][c + c_out*CHANNEL_IN_T] += avg_inputs[n][c][s][ss]/16;
 				}
 			}
 		}
@@ -276,8 +276,10 @@ void avgpool(
 
 // AvgPool Back-prop
 void avgpool_bp(
-	int8 error[BATCH_SIZE][CHANNEL_OUT_T],							// in
-	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH]			// out, error_avg
+	int8 error[BATCH_SIZE][512],							// in
+	int8 out_buf[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],			// out, error_avg
+
+	int  c_out
 	// int stride
 	// int H_fmap	// #(-1,512,1,1)
 )
@@ -286,13 +288,12 @@ void avgpool_bp(
 
 	// int H_fmap_OUT = stride;
 	// int stride2 = stride*stride;
-
-	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+	for (int c = 0; c < CHANNEL_IN_T; c ++) {
 		for (int s = 0; s < 4; s ++) {
 			for (int ss = 0; ss < 4; ss ++) {
 // #pragma HLS PIPELINE
 				for (int n = 0; n < BATCH_SIZE; n ++) {
-					out_buf[n][c][s][ss] = error[n][c]/16;
+					out_buf[n][c][s][ss] = error[n][c + c_out*CHANNEL_IN_T]/16;
 				}
 			}
 		}
@@ -301,15 +302,15 @@ void avgpool_bp(
 
 // FC (no bias)
 void FC(
-	int8 inputs[BATCH_SIZE][CHANNEL_OUT_T],
-	int8 linear_weight[10][CHANNEL_OUT_T],
+	int8 inputs[BATCH_SIZE][512],
+	int8 linear_weight[10][512],
 	int8 outputs[BATCH_SIZE][10]
 )
 {
 // #pragma HLS ARRAY_PARTITION variable=inputs complete dim=2
 // #pragma HLS ARRAY_PARTITION variable=linear_weight complete dim=2
 
-	for (int cii = 0; cii < CHANNEL_OUT_T; cii++) {
+	for (int cii = 0; cii < 512; cii++) {
 		for (int coo = 0; coo < 10; coo ++) {
 // #pragma HLS PIPELINE
 			for (int bii = 0; bii < BATCH_SIZE; bii++) {
@@ -323,8 +324,8 @@ void FC(
 void FC_bp(
 	int8 inputs[BATCH_SIZE][10],
 	// int8 linear_weight_transpose[CHANNEL_OUT_T][10],
-	int8 linear_weight[10][CHANNEL_OUT_T],
-	int8 outputs[BATCH_SIZE][CHANNEL_OUT_T]
+	int8 linear_weight[10][512],
+	int8 outputs[BATCH_SIZE][512]
 )
 {
 // #pragma HLS ARRAY_PARTITION variable=linear_weight complete dim=2
@@ -530,8 +531,8 @@ void conv_3x3_rot_bp
 // conv_1x1_rot_bp, padding=0
 void conv_1x1_rot_bp
 (
-	int8 input[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// error in on-chip
-	int8 weight[CHANNEL_OUT_T][CHANNEL_OUT_T],
+	int8 input[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],	// error in on-chip
+	int8 weight[CHANNEL_OUT_T][CHANNEL_IN_T],
 	int8 output[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],	// error out on-chip
 
 	int stride,
