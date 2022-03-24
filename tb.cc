@@ -15,14 +15,14 @@ float image[4][3][32][32];
 int8 image_hw[4][3][32][32];
 int8 output[4][10];
 
-int8 conv_3x3_weight_all[299][64][64][3][3];
-int8 conv_1x1_weight_all[42][64][64];
+int8 conv_3x3_weight_all[300][64][64][3][3];
+int8 conv_1x1_weight_all[43][64][64];
 int8 linear_weight_hw[8][512];
 
-int8 out_buf_t0[61][4][64][33][33];
-int8 out_buf_t1[61][4][64][33][33];
+int8 out_buf_t0[62][4][64][33][33];
+int8 out_buf_t1[62][4][64][33][33];
 
-int1 relu_mask[61][4][64][33][33];
+int1 relu_mask[62][4][64][33][33];
 
 // conv + bn_sw + relu_sw
 /* forward */

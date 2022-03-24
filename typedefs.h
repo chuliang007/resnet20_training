@@ -60,4 +60,3 @@
 	typedef ap_int<512> int512;
 
 #endif
-

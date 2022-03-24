@@ -1,6 +1,13 @@
 #include <cstdio>
 
+#define lr 0.01
 #define BATCH_SIZE 4
+/*
+#define NUM_3x3_WT 1196	// 299 * BATCH_SIZE
+#define NUM_1x1_WT 168	// 42 * BATCH_SIZE
+#define NUM_ACT 1196
+#define NUM_SC 168
+*/
 #define CHANNEL_IN_T 64
 #define CHANNEL_OUT_T 64
 #define WIDTH 33
@@ -8,12 +15,14 @@
 //--------------------
 //  Top Function 
 //--------------------
-int main()
+int main(
+	/*int int ini,
+	int int ini_sc,
+	int conv_3x3_weight_ptr,
+	int conv_1x1_weight_ptr
+	*/
+)
 {
-
-	int H_fmap_in, H_fmap_out, in_channels, in_channels_after_pack; 
-    int out_channels, out_channel_start, stride, conv_3x3_weight_ptr, conv_1x1_weight_ptr, ini;
-
 //////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////		Forward path		//////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////
@@ -23,33 +32,37 @@ int main()
 	//////////// GET IMAGE /////////////////////////
 	////////////////////////////////////////////////
 
-	ini = 0;
+	int ini = 0;
 
 	////////////////////////////////////////////////
 	/////////// Conv 1 + bn 1 + relu 1 /////////////
 	////////////////////////////////////////////////
 
-	in_channels = 64;
-	in_channels_after_pack = 1;
-	out_channels = 64;
-	H_fmap_in =32;
-	H_fmap_out = 32;
-	stride = 1;
-	conv_3x3_weight_ptr = 0;
-	conv_1x1_weight_ptr = 0;
+	int in_channels = 64;
+	int in_channels_after_pack = 1;
+	int out_channels = 64;
+	int H_fmap_in =32;
+	int H_fmap_out = 32;
+	int stride = 1;
+	int conv_3x3_weight_ptr = 0;
+	int conv_1x1_weight_ptr = 0;
 
-    LOOP_Conv1:	 // 4 outermost for-loops
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 1
-		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
-			conv_3x3_weight_ptr += 1;
+	int ini_sc = 0;
+	
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1; 	// ini = 1
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= Conv 1 + bn 1 + relu 1 ======= \n");
-	printf("ini: %d \n", ini);	
+	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
@@ -66,69 +79,77 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer1_0 PG1 //////////////////////
-	LOOP_layer1_0_Conv1:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 2
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 2
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer1_0 PG1 ======= \n");
-	printf("ini: %d \n", ini);	
+	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer1_0 PG2 //////////////////////
-	LOOP_layer1_0_Conv2:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 3
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// int ini = 3
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer1_0 PG2 ======= \n");
-	printf("ini: %d \n", ini);	
+	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer1_1 PG1 //////////////////////
-	LOOP_layer1_1_Conv1:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 4
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 4
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer1_1 PG1 ======= \n");
-	printf("ini: %d \n", ini);	
+	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer1_1 PG2 //////////////////////
-	LOOP_layer1_1_Conv2:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 5
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 5
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer1_1 PG2 ======= \n");
-	printf("ini: %d \n", ini);	
+	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
@@ -146,35 +167,40 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer2_0 shortcut (conv+bn) ///////
-	LOOP_layer2_0_ConvSC:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 6
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
-			conv_1x1_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 6
+				ini_sc += 1;	// ini_sc = 0;
+				conv_1x1_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer2_0 shortcut ======= \n");
-	printf("ini: %d \n", ini);	
+	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer2_0 PG1 //////////////////////
-	LOOP_layer2_0_Conv1:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 7
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+				
+				ini += 1;	// ini = 7
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer2_0 PG1 ======= \n");
-	printf("ini: %d \n", ini);	
+	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
@@ -191,49 +217,61 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer2_0 PG2 //////////////////////
-	LOOP_layer2_0_Conv2:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 8
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// int ini = 8
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer2_0 PG1 ======= \n");
-	printf("ini: %d \n", ini);	
+	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer2_1 PG1 //////////////////////
-	LOOP_layer2_1_Conv1:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 9
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// int ini = 9
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer2_1 PG1 ======= \n");
-	printf("ini: %d \n", ini);	
+	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer2_1 PG2 //////////////////////
-	LOOP_layer2_1_Conv2:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 10
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// int ini = 10
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
+
+	printf("======= layer2_1 PG2 ======= \n");
+	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
+	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
+	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
+
 	////////////////////////////////////////////////
 	//////////// LAYER 3 Downsample ////////////////
 	////////////////////////////////////////////////
@@ -245,42 +283,42 @@ int main()
 	out_channels = 256;
 	stride = 2;
 
-	printf("======= layer2_1 PG2 ======= \n");
-	printf("ini: %d \n", ini);	
-	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
-	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
-
 	////////////////////////////////////////////////
 	//////////// layer3_0 shortcut (conv+bn) ///////
-	LOOP_layer3_0_ConvSC:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 11
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
-			conv_1x1_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 11
+				ini_sc += 1; // ini_sc = 1
+				conv_1x1_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer3_0 shortcut ======= \n");
-	printf("ini: %d \n", ini);	
+	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer3_0 PG1 //////////////////////
-	LOOP_layer3_0_Conv1:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 12
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 12
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer3_0 PG1 ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
@@ -297,52 +335,58 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer3_0 PG2 //////////////////////
-	LOOP_layer3_0_Conv2:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 13
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 13
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer3_0 PG2 ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer3_1 PG1 //////////////////////
-	LOOP_layer3_1_Conv1:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 14
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 14
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer3_1 PG1 ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer3_1 PG2 //////////////////////
-	LOOP_layer3_1_Conv2:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 15
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 15
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer3_1 PG2 ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
@@ -359,35 +403,40 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer4_0 shortcut (conv+bn) ///////
-	LOOP_layer4_0_ConvSC:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 16
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
-			conv_1x1_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 16
+				ini_sc += 1; // ini_sc = 2
+				conv_1x1_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer4_0 shortcut ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer4_0 PG1 //////////////////////
-	LOOP_layer4_0_Conv1:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 17
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 17
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer4_0 PG1 ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
@@ -404,52 +453,58 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer4_0 PG2 //////////////////////
-	LOOP_layer4_0_Conv2:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 18
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 18
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer4_0 PG2 ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer4_1 PG1 //////////////////////
-	LOOP_layer4_1_Conv1:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 19
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 19
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer4_1 PG1 ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 	////////////////////////////////////////////////
 	//////////// layer4_1 PG2 //////////////////////
-	LOOP_layer4_1_Conv2:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 20
-    	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 	
-			conv_3x3_weight_ptr += 1;
+    for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) { 
+		for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+
+				ini += 1;	// ini = 20
+				conv_3x3_weight_ptr += 1;
+
 			}
 		}
     }
 
 	printf("======= layer4_1 PG2 ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
@@ -459,6 +514,7 @@ int main()
 
 	printf("//////////////////////// Finised forward path //////////////////////// \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 	printf("//////////////////////// Starting backward path //////////////////////// \n");
@@ -476,54 +532,56 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer4_1 PG2 //////////////////////
-
 	printf("======= layer4_1 PG2 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
-
-	LOOP_layer4_1_Conv2_bp:
+		
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 20
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1; // int ini = 20
+				conv_3x3_weight_ptr -= 1;	
 			}
 		}
     }
 
 	////////////////////////////////////////////////
 	//////////// layer4_1 PG1 //////////////////////
-	
 	printf("======= layer4_1 PG1 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer4_1_Conv1_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 19
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 19
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
     }
 
 	////////////////////////////////////////////////
 	//////////// layer4_0 PG2 //////////////////////
-
 	printf("======= layer4_0 PG2 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer4_0_Conv2_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 18
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1; // int ini = 18
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
     }
@@ -541,36 +599,39 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer4_0 PG1 //////////////////////
-
 	printf("======= layer4_0 PG1 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
-
-	LOOP_layer4_0_Conv1_bp:
+ 
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 17
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 17
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
     }
 
 	////////////////////////////////////////////////
 	//////////// layer4_0 shortcut (conv+bn) ///////
-
 	printf("======= layer4_0 shortcut BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer4_0_ConvSC_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 16
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_1x1_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 16
+				ini_sc -= 1;// ini_sc = 2
+				conv_1x1_weight_ptr -= 1;
+
 			}
 		}
     }
@@ -589,57 +650,60 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer3_1 PG2 //////////////////////
-
 	printf("======= layer3_1 PG2 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer3_1_Conv2_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 15
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 15
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
-    }
+	}
 
 	////////////////////////////////////////////////
 	//////////// layer3_1 PG1 //////////////////////
-
 	printf("======= layer3_1 PG1 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer3_1_Conv1_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 14
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 14
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
-    }
+	}
 
 	////////////////////////////////////////////////
 	//////////// layer3_0 PG2 //////////////////////
-
 	printf("======= layer3_0 PG2 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer3_0_Conv2_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 13
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1; // int ini = 13
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
-    }
+	}
 
 	////////////////////////////////////////////////
 	//////////// LAYER 3 Upsample //////////////////
@@ -654,39 +718,42 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer3_0 PG1 //////////////////////
-
 	printf("======= layer3_0 PG1 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer3_0_Conv1_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 12
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 12
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
-    }
+	}
 
 	////////////////////////////////////////////////
 	//////////// layer3_0 shortcut (conv+bn) ///////
-
 	printf("======= layer3_0 shortcut BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer3_0_ConvSC_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 11
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_1x1_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 11
+				ini_sc -= 1;	// int ini_sc = 1
+				conv_1x1_weight_ptr -= 1;
+
 			}
 		}
-    }
+	}
 
 	////////////////////////////////////////////////
 	//////////// LAYER 2 ///////////////////////////
@@ -701,57 +768,60 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer2_1 PG2 //////////////////////
-
 	printf("======= layer2_1 PG2 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer2_1_Conv2_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 10
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 10
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
-    }
+	}
 
 	////////////////////////////////////////////////
 	//////////// layer2_1 PG1 //////////////////////
-
 	printf("======= layer2_1 PG1 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer2_1_Conv1_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 9
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 9
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
-    }
+	}
 
 	////////////////////////////////////////////////
 	//////////// layer2_0 PG2 //////////////////////
-
 	printf("======= layer2_0 PG2 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer2_0_Conv2_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 8
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1; // int ini = 8
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
-    }
+	}
 
 	////////////////////////////////////////////////
 	//////////// LAYER 2 Upsample //////////////////
@@ -766,39 +836,42 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer2_0 PG1 //////////////////////
-
 	printf("======= layer2_0 PG1 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer2_0_Conv1_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 7
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 7
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
-    }
+	}
 
 	////////////////////////////////////////////////
 	//////////// layer2_0 shortcut (conv+bn) ///////
-
 	printf("======= layer2_0 shortcut BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer2_0_ConvSC_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 6
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_1x1_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 6
+				ini_sc -= 1;	// int ini_sc = 0
+				conv_1x1_weight_ptr -= 1;
+
 			}
 		}
-    }
+	}
 
 	////////////////////////////////////////////////
 	//////////// LAYER 1 ///////////////////////////
@@ -813,72 +886,77 @@ int main()
 
 	////////////////////////////////////////////////
 	//////////// layer1_1 PG2 //////////////////////
-
 	printf("======= layer1_1 PG2 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer1_1_Conv2_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 5
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1; // int ini = 5
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
     }
 
 	////////////////////////////////////////////////
 	//////////// layer1_1 PG1 //////////////////////
-
 	printf("======= layer1_1 PG1 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer1_1_Conv1_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 4
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 4
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
     }
 
 	////////////////////////////////////////////////
 	//////////// layer1_0 PG2 //////////////////////
-
 	printf("======= layer1_0 PG2 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer1_0_Conv2_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 3
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				// lsb_fmap[int ini] = msb_fmap[int ini];	// identity branch
+				ini -= 1;	// int ini = 3
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
     }
 
 	////////////////////////////////////////////////
 	//////////// layer1_0 PG1 //////////////////////
-
 	printf("======= layer1_0 PG2 BP ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-	LOOP_layer1_0_Conv1_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 2
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 2
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
     }
@@ -896,194 +974,242 @@ int main()
 
 	printf("======= Conv 1 + bn 1 + relu 1 ======= \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
-    LOOP_Conv1_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 1
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+
+				ini -= 1;	// int ini = 1
+				conv_3x3_weight_ptr -= 1;
+
 			}
 		}
     }
 
 	printf("///////////////// Finised backward path ///////////////// \n");
 	printf("ini: %d \n", ini);
+	printf("ini_sc: %d \n", ini_sc);
 	printf("conv_3x3_weight_ptr: %d \n", conv_3x3_weight_ptr);
 	printf("conv_1x1_weight_ptr: %d \n", conv_1x1_weight_ptr);
 
 }	// end FracBNN_T
 
+
 /*
 ======= Conv 1 + bn 1 + relu 1 ======= 
-ini: 1 
-conv_3x3_weight_ptr: 1 
+ini: 4 
+ini_sc: 0 
+conv_3x3_weight_ptr: 4 
 conv_1x1_weight_ptr: 0 
 ======= layer1_0 PG1 ======= 
-ini: 2 
-conv_3x3_weight_ptr: 2 
+ini: 8 
+ini_sc: 0 
+conv_3x3_weight_ptr: 8 
 conv_1x1_weight_ptr: 0 
 ======= layer1_0 PG2 ======= 
-ini: 3 
-conv_3x3_weight_ptr: 3 
+ini: 12 
+ini_sc: 0 
+conv_3x3_weight_ptr: 12 
 conv_1x1_weight_ptr: 0 
 ======= layer1_1 PG1 ======= 
-ini: 4 
-conv_3x3_weight_ptr: 4 
+ini: 16 
+ini_sc: 0 
+conv_3x3_weight_ptr: 16 
 conv_1x1_weight_ptr: 0 
 ======= layer1_1 PG2 ======= 
-ini: 5 
-conv_3x3_weight_ptr: 5 
+ini: 20 
+ini_sc: 0 
+conv_3x3_weight_ptr: 20 
 conv_1x1_weight_ptr: 0 
 ======= layer2_0 shortcut ======= 
-ini: 6 
-conv_3x3_weight_ptr: 5 
-conv_1x1_weight_ptr: 2 
+ini: 28 
+ini_sc: 8 
+conv_3x3_weight_ptr: 20 
+conv_1x1_weight_ptr: 8 
 ======= layer2_0 PG1 ======= 
-ini: 7 
-conv_3x3_weight_ptr: 7 
-conv_1x1_weight_ptr: 2 
+ini: 36 
+ini_sc: 8 
+conv_3x3_weight_ptr: 28 
+conv_1x1_weight_ptr: 8 
 ======= layer2_0 PG1 ======= 
-ini: 9 
-conv_3x3_weight_ptr: 11 
-conv_1x1_weight_ptr: 2 
+ini: 52 
+ini_sc: 8 
+conv_3x3_weight_ptr: 44 
+conv_1x1_weight_ptr: 8 
 ======= layer2_1 PG1 ======= 
-ini: 11 
-conv_3x3_weight_ptr: 15 
-conv_1x1_weight_ptr: 2 
+ini: 68 
+ini_sc: 8 
+conv_3x3_weight_ptr: 60 
+conv_1x1_weight_ptr: 8 
 ======= layer2_1 PG2 ======= 
-ini: 13 
-conv_3x3_weight_ptr: 19 
-conv_1x1_weight_ptr: 2 
+ini: 84 
+ini_sc: 8 
+conv_3x3_weight_ptr: 76 
+conv_1x1_weight_ptr: 8 
 ======= layer3_0 shortcut ======= 
-ini: 15 
-conv_3x3_weight_ptr: 19 
-conv_1x1_weight_ptr: 10 
+ini: 116 
+ini_sc: 40 
+conv_3x3_weight_ptr: 76 
+conv_1x1_weight_ptr: 40 
 ======= layer3_0 PG1 ======= 
-ini: 17 
-conv_3x3_weight_ptr: 27 
-conv_1x1_weight_ptr: 10 
+ini: 148 
+ini_sc: 40 
+conv_3x3_weight_ptr: 108 
+conv_1x1_weight_ptr: 40 
 ======= layer3_0 PG2 ======= 
-ini: 21 
-conv_3x3_weight_ptr: 43 
-conv_1x1_weight_ptr: 10 
+ini: 212 
+ini_sc: 40 
+conv_3x3_weight_ptr: 172 
+conv_1x1_weight_ptr: 40 
 ======= layer3_1 PG1 ======= 
-ini: 25 
-conv_3x3_weight_ptr: 59 
-conv_1x1_weight_ptr: 10 
+ini: 276 
+ini_sc: 40 
+conv_3x3_weight_ptr: 236 
+conv_1x1_weight_ptr: 40 
 ======= layer3_1 PG2 ======= 
-ini: 29 
-conv_3x3_weight_ptr: 75 
-conv_1x1_weight_ptr: 10 
+ini: 340 
+ini_sc: 40 
+conv_3x3_weight_ptr: 300 
+conv_1x1_weight_ptr: 40 
 ======= layer4_0 shortcut ======= 
-ini: 33 
-conv_3x3_weight_ptr: 75 
-conv_1x1_weight_ptr: 42 
+ini: 468 
+ini_sc: 168 
+conv_3x3_weight_ptr: 300 
+conv_1x1_weight_ptr: 168 
 ======= layer4_0 PG1 ======= 
-ini: 37 
-conv_3x3_weight_ptr: 107 
-conv_1x1_weight_ptr: 42 
+ini: 596 
+ini_sc: 168 
+conv_3x3_weight_ptr: 428 
+conv_1x1_weight_ptr: 168 
 ======= layer4_0 PG2 ======= 
-ini: 45 
-conv_3x3_weight_ptr: 171 
-conv_1x1_weight_ptr: 42 
+ini: 852 
+ini_sc: 168 
+conv_3x3_weight_ptr: 684 
+conv_1x1_weight_ptr: 168 
 ======= layer4_1 PG1 ======= 
-ini: 53 
-conv_3x3_weight_ptr: 235 
-conv_1x1_weight_ptr: 42 
+ini: 1108 
+ini_sc: 168 
+conv_3x3_weight_ptr: 940 
+conv_1x1_weight_ptr: 168 
 ======= layer4_1 PG2 ======= 
-ini: 61 
-conv_3x3_weight_ptr: 299 
-conv_1x1_weight_ptr: 42 
+ini: 1364 
+ini_sc: 168 
+conv_3x3_weight_ptr: 1196 
+conv_1x1_weight_ptr: 168 
+
 //////////////////////// Finised forward path //////////////////////// 
-ini: 61 
-conv_3x3_weight_ptr: 299 
-conv_1x1_weight_ptr: 42 
+ini: 1364 
+ini_sc: 168 
+conv_3x3_weight_ptr: 1196 
+conv_1x1_weight_ptr: 168 
 //////////////////////// Starting backward path //////////////////////// 
+
 ======= layer4_1 PG2 BP ======= 
-ini: 61 
-conv_3x3_weight_ptr: 299 
-conv_1x1_weight_ptr: 42 
+ini: 1364 
+ini_sc: 168 
+conv_3x3_weight_ptr: 1196 
+conv_1x1_weight_ptr: 168 
 ======= layer4_1 PG1 BP ======= 
-ini: 53 
-conv_3x3_weight_ptr: 235 
-conv_1x1_weight_ptr: 42 
+ini: 1108 
+ini_sc: 168 
+conv_3x3_weight_ptr: 940 
+conv_1x1_weight_ptr: 168 
 ======= layer4_0 PG2 BP ======= 
-ini: 45 
-conv_3x3_weight_ptr: 171 
-conv_1x1_weight_ptr: 42 
+ini: 852 
+ini_sc: 168 
+conv_3x3_weight_ptr: 684 
+conv_1x1_weight_ptr: 168 
 ======= layer4_0 PG1 BP ======= 
-ini: 37 
-conv_3x3_weight_ptr: 107 
-conv_1x1_weight_ptr: 42 
+ini: 596 
+ini_sc: 168 
+conv_3x3_weight_ptr: 428 
+conv_1x1_weight_ptr: 168 
 ======= layer4_0 shortcut BP ======= 
-ini: 33 
-conv_3x3_weight_ptr: 75 
-conv_1x1_weight_ptr: 42 
+ini: 468 
+ini_sc: 168 
+conv_3x3_weight_ptr: 300 
+conv_1x1_weight_ptr: 168 
 ======= layer3_1 PG2 BP ======= 
-ini: 29 
-conv_3x3_weight_ptr: 75 
-conv_1x1_weight_ptr: 10 
+ini: 340 
+ini_sc: 40 
+conv_3x3_weight_ptr: 300 
+conv_1x1_weight_ptr: 40 
 ======= layer3_1 PG1 BP ======= 
-ini: 25 
-conv_3x3_weight_ptr: 59 
-conv_1x1_weight_ptr: 10 
+ini: 276 
+ini_sc: 40 
+conv_3x3_weight_ptr: 236 
+conv_1x1_weight_ptr: 40 
 ======= layer3_0 PG2 BP ======= 
-ini: 21 
-conv_3x3_weight_ptr: 43 
-conv_1x1_weight_ptr: 10 
+ini: 212 
+ini_sc: 40 
+conv_3x3_weight_ptr: 172 
+conv_1x1_weight_ptr: 40 
 ======= layer3_0 PG1 BP ======= 
-ini: 17 
-conv_3x3_weight_ptr: 27 
-conv_1x1_weight_ptr: 10 
+ini: 148 
+ini_sc: 40 
+conv_3x3_weight_ptr: 108 
+conv_1x1_weight_ptr: 40 
 ======= layer3_0 shortcut BP ======= 
-ini: 15 
-conv_3x3_weight_ptr: 19 
-conv_1x1_weight_ptr: 10 
+ini: 116 
+ini_sc: 40 
+conv_3x3_weight_ptr: 76 
+conv_1x1_weight_ptr: 40 
 ======= layer2_1 PG2 BP ======= 
-ini: 13 
-conv_3x3_weight_ptr: 19 
-conv_1x1_weight_ptr: 2 
+ini: 84 
+ini_sc: 8 
+conv_3x3_weight_ptr: 76 
+conv_1x1_weight_ptr: 8 
 ======= layer2_1 PG1 BP ======= 
-ini: 11 
-conv_3x3_weight_ptr: 15 
-conv_1x1_weight_ptr: 2 
+ini: 68 
+ini_sc: 8 
+conv_3x3_weight_ptr: 60 
+conv_1x1_weight_ptr: 8 
 ======= layer2_0 PG2 BP ======= 
-ini: 9 
-conv_3x3_weight_ptr: 11 
-conv_1x1_weight_ptr: 2 
+ini: 52 
+ini_sc: 8 
+conv_3x3_weight_ptr: 44 
+conv_1x1_weight_ptr: 8 
 ======= layer2_0 PG1 BP ======= 
-ini: 7 
-conv_3x3_weight_ptr: 7 
-conv_1x1_weight_ptr: 2 
+ini: 36 
+ini_sc: 8 
+conv_3x3_weight_ptr: 28 
+conv_1x1_weight_ptr: 8 
 ======= layer2_0 shortcut BP ======= 
-ini: 6 
-conv_3x3_weight_ptr: 5 
-conv_1x1_weight_ptr: 2 
+ini: 28 
+ini_sc: 8 
+conv_3x3_weight_ptr: 20 
+conv_1x1_weight_ptr: 8 
 ======= layer1_1 PG2 BP ======= 
-ini: 5 
-conv_3x3_weight_ptr: 5 
+ini: 20 
+ini_sc: 0 
+conv_3x3_weight_ptr: 20 
 conv_1x1_weight_ptr: 0 
 ======= layer1_1 PG1 BP ======= 
-ini: 4 
-conv_3x3_weight_ptr: 4 
+ini: 16 
+ini_sc: 0 
+conv_3x3_weight_ptr: 16 
 conv_1x1_weight_ptr: 0 
 ======= layer1_0 PG2 BP ======= 
-ini: 3 
-conv_3x3_weight_ptr: 3 
+ini: 12 
+ini_sc: 0 
+conv_3x3_weight_ptr: 12 
 conv_1x1_weight_ptr: 0 
 ======= layer1_0 PG2 BP ======= 
-ini: 2 
-conv_3x3_weight_ptr: 2 
+ini: 8 
+ini_sc: 0 
+conv_3x3_weight_ptr: 8 
 conv_1x1_weight_ptr: 0 
 ======= Conv 1 + bn 1 + relu 1 ======= 
-ini: 1 
-conv_3x3_weight_ptr: 1 
+ini: 4 
+ini_sc: 0 
+conv_3x3_weight_ptr: 4 
 conv_1x1_weight_ptr: 0 
 ///////////////// Finised backward path ///////////////// 
 ini: 0 
+ini_sc: 0 
 conv_3x3_weight_ptr: 0 
 conv_1x1_weight_ptr: 0 
 */
