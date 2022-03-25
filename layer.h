@@ -38,14 +38,14 @@ void identity_shortcut(
 
 // fc weight loading from DRAM
 void load_fc_weights(
-	int8 linear_weight_tile_buffer[10][512],
-	int8 linear_weight[10][512]
+	int8 linear_weight_tile_buffer[10][CHANNEL_OUT_T],
+	int8 linear_weight[10][CHANNEL_OUT_T]
 )
 {
 // #pragma HLS ARRAY_PARTITION variable=linear_weight complete dim=2
 
 	for (int row = 0; row < 10; row ++) {
-		for (int col = 0; col < 512; col ++) {
+		for (int col = 0; col < CHANNEL_OUT_T; col ++) {
 // #pragma HLS PIPELINE
 			linear_weight_tile_buffer[row][col] = linear_weight[row][col];
 		}
@@ -111,8 +111,6 @@ void bn(
 // #pragma HLS ARRAY_PARTITION variable=mu complete dim=1
 // #pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
 // #pragma HLS ARRAY_PARTITION variable=var complete dim=1
-
-// // #pragma HLS DATAFLOW
 
     // calc mean
 	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
@@ -189,8 +187,6 @@ void bn_bp(
 // #pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
 // #pragma HLS ARRAY_PARTITION variable=var complete dim=1
 
-// // #pragma HLS DATAFLOW
-
 	// calc mean
 	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 		for (int row = 0; row < H_fmap; row ++) {
@@ -256,9 +252,10 @@ void bn_bp(
 // AvgPool
 void avgpool(
 	int8 avg_inputs[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH],		// in
-	int8 out_buf[BATCH_SIZE][512],						// out, avg_outputs
+	int8 out_buf[BATCH_SIZE][CHANNEL_OUT_T],						// out, avg_outputs
 
 	int  c_out
+	//int1 ctrl_accum	// accum=1, output += input; accum=0, output=0
 	//int stride,
 	//int H_fmap
 )
@@ -267,13 +264,12 @@ void avgpool(
 
 	// int H_fmap_OUT = H_fmap/stride;
 	// int stride2 = stride*stride;
-	// int8 accum;
 	for (int c = 0; c < CHANNEL_IN_T; c ++) {
 		for (int s = 0; s < 4; s ++) {
 			for (int ss = 0; ss < 4; ss ++) {
 // #pragma HLS PIPELINE
 				for (int n = 0; n < BATCH_SIZE; n ++) {
-					out_buf[n][c + c_out*CHANNEL_IN_T] += avg_inputs[n][c][s][ss]/16;
+					out_buf[n][c] += avg_inputs[n][c][s][ss]/16;
 				}
 			}
 		}
@@ -308,15 +304,15 @@ void avgpool_bp(
 
 // FC (no bias)
 void FC(
-	int8 inputs[BATCH_SIZE][512],
-	int8 linear_weight[10][512],
+	int8 inputs[BATCH_SIZE][CHANNEL_OUT_T],
+	int8 linear_weight[10][CHANNEL_OUT_T],
 	int8 outputs[BATCH_SIZE][10]
 )
 {
 // #pragma HLS ARRAY_PARTITION variable=inputs complete dim=2
 // #pragma HLS ARRAY_PARTITION variable=linear_weight complete dim=2
 
-	for (int cii = 0; cii < 512; cii++) {
+	for (int cii = 0; cii < CHANNEL_OUT_T; cii++) {
 		for (int coo = 0; coo < 10; coo ++) {
 // #pragma HLS PIPELINE
 			for (int bii = 0; bii < BATCH_SIZE; bii++) {
@@ -330,8 +326,8 @@ void FC(
 void FC_bp(
 	int8 inputs[BATCH_SIZE][10],
 	// int8 linear_weight_transpose[CHANNEL_OUT_T][10],
-	int8 linear_weight[10][512],
-	int8 outputs[BATCH_SIZE][512]
+	int8 linear_weight[10][CHANNEL_OUT_T],
+	int8 outputs[BATCH_SIZE][CHANNEL_OUT_T]
 )
 {
 // #pragma HLS ARRAY_PARTITION variable=linear_weight complete dim=2
@@ -489,8 +485,6 @@ void conv_3x3_rot_bp
 // #pragma HLS ARRAY_PARTITION variable=weight_rot complete dim=1
 // #pragma HLS ARRAY_PARTITION variable=weight_rot complete dim=2
 
-// // #pragma HLS DATAFLOW
-
 	for (int row = 0; row < H_fmap_in; row++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 		for (int col = 0; col < H_fmap_in; col++) {
@@ -560,8 +554,6 @@ void conv_1x1_rot_bp
 // #pragma HLS ARRAY_PARTITION variable=weight_rot complete dim=2
 // #pragma HLS ARRAY_PARTITION variable=input_dil complete dim=2
 
-// // #pragma HLS DATAFLOW
-
 	for (int row = 0; row < H_fmap_in; row++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 		for (int col = 0; col < H_fmap_in; col++) {
@@ -619,8 +611,6 @@ void conv_3x3_grad
 // #pragma HLS ARRAY_PARTITION variable=input complete dim=2
 // #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
 
-// // #pragma HLS DATAFLOW
-
 	// weight dilation, k_dil = 1 + (k-1)*s
 	int8 KERNEL_DIL = (H_fmap_in-1)*stride + 1;	// max={32, (16-1)*2+1=31} < WIDTH
 	int8 weight_dil[BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];	// buffer for dilated weights
@@ -676,8 +666,6 @@ void conv_1x1_grad
 {
 // #pragma HLS ARRAY_PARTITION variable=input complete dim=2
 // #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-
-// // #pragma HLS DATAFLOW
 
 	// weight dilation, k_dil = 1 + (k-1)*s
 	int8 KERNEL_DIL = (H_fmap_in-1)*stride + 1;
@@ -788,8 +776,6 @@ void bn_relu(
 // #pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
 // #pragma HLS ARRAY_PARTITION variable=var complete dim=1
 
-// #pragma HLS DATAFLOW
-
     // calc mean
 	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 		for (int row = 0; row < H_fmap; row ++) {
@@ -873,8 +859,6 @@ inline void bn_relu_bp(
 // #pragma HLS ARRAY_PARTITION variable=mu complete dim=1
 // #pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
 // #pragma HLS ARRAY_PARTITION variable=var complete dim=1
-
-// #pragma HLS DATAFLOW
 
 	// calc mean and relu_bp
 	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
