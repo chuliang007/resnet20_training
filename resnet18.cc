@@ -7,6 +7,7 @@ using namespace std;
 static  int8 msb_fmap_tile_buffer_0[NUM_TILE][BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
 static  int8 msb_fmap_tile_buffer_1[NUM_TILE][BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
 static  int8 lsb_fmap_tile_buffer[NUM_TILE][BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];	// shortcut activation/error on-chip
+
 static	int8 conv_3x3_weight_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
 static	int8 conv_1x1_weight_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T];
 
@@ -89,11 +90,12 @@ void FracNet_T(
 #pragma HLS ARRAY_PARTITION variable=pool_out_buf complete dim=2
 #pragma HLS ARRAY_PARTITION variable=linear_weight_tile_buffer complete dim=2
 */
-
+/*
 #pragma HLS ARRAY_PARTITION variable=grad_buf_t0 complete dim=1
 #pragma HLS ARRAY_PARTITION variable=grad_buf_t0 complete dim=2
 #pragma HLS ARRAY_PARTITION variable=grad_buf_t1 complete dim=1
 #pragma HLS ARRAY_PARTITION variable=grad_buf_t1 complete dim=2
+*/
 /*
 #pragma HLS ARRAY_PARTITION variable=gamma complete dim=1
 #pragma HLS ARRAY_PARTITION variable=beta complete dim=1
