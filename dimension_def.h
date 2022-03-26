@@ -8,7 +8,7 @@ used in the accelerator.
 #define NUM_3x3_WT 300
 #define NUM_1x1_WT 43
 #define NUM_ACT 62
-#define NUM_TILE 1 // 512/CHANNEL_IN_T
+#define NUM_TILE 512/CHANNEL_OUT_T
 
 #define CHANNEL_IN_T 64
 #define CHANNEL_OUT_T 64
