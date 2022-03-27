@@ -71,21 +71,18 @@ void FracNet_T(
 
 #pragma HLS ALLOCATION function instances=SGD_WU_3x3 limit=1
 #pragma HLS ALLOCATION function instances=SGD_WU_1x1 limit=1
-/*
+
 // array partition
-#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_0 complete dim=1
-#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_0 complete dim=3
-#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_1 complete dim=1
-#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_1 complete dim=3
-#pragma HLS ARRAY_PARTITION variable=lsb_fmap_tile_buffer complete dim=1
-#pragma HLS ARRAY_PARTITION variable=lsb_fmap_tile_buffer complete dim=3
+#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_0 complete dim=2
+#pragma HLS ARRAY_PARTITION variable=msb_fmap_tile_buffer_1 complete dim=2
+#pragma HLS ARRAY_PARTITION variable=lsb_fmap_tile_buffer complete dim=2
 
 #pragma HLS ARRAY_PARTITION variable=conv_3x3_weight_tile_buffer complete dim=1
 #pragma HLS ARRAY_PARTITION variable=conv_3x3_weight_tile_buffer complete dim=2
 #pragma HLS ARRAY_PARTITION variable=conv_1x1_weight_tile_buffer complete dim=1
 #pragma HLS ARRAY_PARTITION variable=conv_1x1_weight_tile_buffer complete dim=2
 
-#pragma HLS ARRAY_PARTITION variable=pool_out_buf complete dim=2
+// #pragma HLS ARRAY_PARTITION variable=pool_out_buf complete dim=2
 #pragma HLS ARRAY_PARTITION variable=linear_weight_tile_buffer complete dim=2
 
 #pragma HLS ARRAY_PARTITION variable=grad_buf_t0 complete dim=1
@@ -97,7 +94,6 @@ void FracNet_T(
 #pragma HLS ARRAY_PARTITION variable=beta complete dim=1
 #pragma HLS ARRAY_PARTITION variable=grad_gamma complete dim=1
 #pragma HLS ARRAY_PARTITION variable=grad_beta complete dim=1
-*/
 
 	int H_fmap_in, H_fmap_out, in_channels, in_channels_after_pack, out_channels_after_pack;
     int out_channels, out_channel_start, stride, conv_3x3_weight_ptr, conv_1x1_weight_ptr, fc_weight_ptr, ini;

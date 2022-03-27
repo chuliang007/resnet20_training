@@ -193,7 +193,7 @@ void bn_bp(
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 			for (int col = 0; col < H_fmap; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 				for (int n = 0; n < BATCH_SIZE; n ++) {
                     mu[c] = mu[c] + bn_inputs_fw[n][c][row][col]/N;
                     // var[c] = var[c] + (bn_inputs_fw[n][c][row][col]-mu[c])*(bn_inputs_fw[n][c][row][col]-mu[c]);
@@ -208,7 +208,7 @@ void bn_bp(
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 			for (int col = 0; col < H_fmap; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 				for (int n = 0; n < BATCH_SIZE; n ++) {
 					var[c] = var[c] + (bn_inputs_fw[n][c][row][col]-mu[c])*(bn_inputs_fw[n][c][row][col]-mu[c]);
 				}
@@ -225,7 +225,7 @@ void bn_bp(
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 			for (int col = 0; col < H_fmap; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 				for (int n = 0; n < BATCH_SIZE; n ++) {
                     g_beta[c] = g_beta[c] + error[n][c][row][col];
                     g_gamma[c] = g_gamma[c] + error[n][c][row][col]*(bn_inputs_fw[n][c][row][col]-mu[c])/sigma[c];
@@ -239,7 +239,7 @@ void bn_bp(
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 			for (int col = 0; col < H_fmap; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 				for (int n = 0; n < BATCH_SIZE; n ++) {
             		// out_buf[n][c][row][col] = gamma[c]*error[n][c][row][col]/sigma[c] - gamma[c]*g_beta[c]/(N*sigma[c]) - (bn_inputs_fw[n][c][row][col]-mu[c])*g_gamma[c]/(N*gamma[c]*sigma[c]*sigma[c]);
 					out_buf[n][c][row][col] = gamma[c]*error[n][c][row][col]/sigma[c] - gamma[c]*g_beta[c]/(N*sigma[c]) - (bn_inputs_fw[n][c][row][col]-mu[c])*g_gamma[c]/(N*gamma[c]*sigma[c]*sigma[c]);
@@ -260,11 +260,13 @@ void avgpool(
 {
 // #pragma HLS ARRAY_PARTITION variable=avg_inputs complete dim=2
 
-	for (int ci = 0; ci < 512; ci ++) {
+	for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 #pragma HLS PIPELINE
 		for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 			if (ctrl_avgpool == 0) {
-				out_buf[bi][ci] = 0;
+				for (int c_tile = 0; c_tile < 512/CHANNEL_IN_T; c_tile ++) {
+					out_buf[bi][ci + c_tile*CHANNEL_IN_T] = 0;
+				}
 			} else {
 				for (int row = 0; row < 4; row ++) {
 					for (int col = 0; col < 4; col ++) {
@@ -576,8 +578,8 @@ void conv_3x3_rot_bp
 			for (int co = 0; co < CHANNEL_OUT_T; co++) {
 				// weight rot180
 				for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
-#pragma HLS PIPELINE
 					for (int row = 0; row < 3; row ++) {
+#pragma HLS PIPELINE
 						for (int col = 0; col < 3; col ++) {
 							weight_rot[cin][co][row][col] = weight[co][cin][3-row-1][3-col-1];
 						}
@@ -646,6 +648,7 @@ void conv_1x1_rot_bp
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 				for (int col = 0; col < H_fmap_out; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
+#pragma HLS PIPELINE
 					for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 						output[bi][co][row][col] = 0;
 					}
@@ -734,7 +737,7 @@ void conv_3x3_grad
 		for (int kcol = 0; kcol < H_fmap_in; kcol ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 				for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 					weight_dil[bi][co][krow*stride][kcol*stride] = weight[bi][co][krow][kcol];
 				}
@@ -752,7 +755,7 @@ void conv_3x3_grad
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 						for (int kcol = 0; kcol < KERNEL_DIL; kcol ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 							for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 								int row_in = row + krow;
 								int col_in = col + kcol;
@@ -800,7 +803,7 @@ void conv_1x1_grad
 		for (int kcol = 0; kcol < H_fmap_in; kcol ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 				for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 					weight_dil[bi][co][krow*stride][kcol*stride] = weight[bi][co][krow][kcol];
 				}
@@ -816,7 +819,7 @@ void conv_1x1_grad
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 				for (int kcol = 0; kcol < KERNEL_DIL; kcol++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 					for (int bi = 0; bi < BATCH_SIZE; bi++) {
 						output[co][ci] += input[bi][ci][krow][kcol] * weight_dil[bi][co][krow][kcol];
 					}
@@ -993,7 +996,7 @@ inline void bn_relu_bp(
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 			for (int col = 0; col < H_fmap; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 				for (int n = 0; n < BATCH_SIZE; n ++) {
 					// mean
 					mu[c] = mu[c] + bn_inputs_fw[n][c][row][col]/N;
@@ -1011,7 +1014,7 @@ inline void bn_relu_bp(
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 			for (int col = 0; col < H_fmap; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 				for (int n = 0; n < BATCH_SIZE; n ++) {
                     var[c] = var[c] + (bn_inputs_fw[n][c][row][col]-mu[c]) * (bn_inputs_fw[n][c][row][col]-mu[c]);
 				}
@@ -1028,7 +1031,7 @@ inline void bn_relu_bp(
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 			for (int col = 0; col < H_fmap; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 				for (int n = 0; n < BATCH_SIZE; n ++) {
                     g_beta[c] = g_beta[c] + error[n][c][row][col];
                     g_gamma[c] = g_gamma[c] + error[n][c][row][col] * (bn_inputs_fw[n][c][row][col]-mu[c])/sigma[c];
@@ -1042,7 +1045,7 @@ inline void bn_relu_bp(
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 			for (int col = 0; col < H_fmap; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
+#pragma HLS PIPELINE II = 4
 				for (int n = 0; n < BATCH_SIZE; n ++) {
             		out_buf[n][c][row][col] = gamma[c]*error[n][c][row][col]/sigma[c] - gamma[c]*g_beta[c]/(N*sigma[c]) - (bn_inputs_fw[n][c][row][col]-mu[c])*g_gamma[c]/(N*gamma[c]*sigma[c]*sigma[c]);
 				}
