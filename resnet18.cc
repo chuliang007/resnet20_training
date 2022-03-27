@@ -6,17 +6,17 @@ using namespace std;
 
 static  int8 msb_fmap_tile_buffer_0[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
 static  int8 msb_fmap_tile_buffer_1[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
-static  int8 lsb_fmap_tile_buffer[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];	// shortcut activation/error on-chip
+static  int8 lsb_fmap_tile_buffer[BATCH_SIZE][CHANNEL_IN_T][WIDTH][WIDTH];		// shortcut activation/error on-chip
 
 static	int8 conv_3x3_weight_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
 static	int8 conv_1x1_weight_tile_buffer[CHANNEL_OUT_T][CHANNEL_IN_T];
 
-static	int8 grad_buf_t0[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];							// weight_3x3 gradient on-chip
-static	int8 grad_buf_t1[CHANNEL_OUT_T][CHANNEL_IN_T];									// weight_1x1 gradient on-chip
+static	int8 grad_buf_t0[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];					// weight_3x3 gradient on-chip
+static	int8 grad_buf_t1[CHANNEL_OUT_T][CHANNEL_IN_T];							// weight_1x1 gradient on-chip
 
-static  int8 pool_out_buf[BATCH_SIZE][CHANNEL_OUT_T];							// AvgPool buffer
-static  int8 linear_weight_tile_buffer[10][CHANNEL_OUT_T];
-static  int8 linear_out_buf[BATCH_SIZE][10];											// FC buffer
+static  int8 pool_out_buf[BATCH_SIZE][512];										// AvgPool buffer
+static  int8 linear_weight_tile_buffer[10][512];
+static  int8 linear_out_buf[BATCH_SIZE][10];									// FC buffer
 
 static	int8 gamma[CHANNEL_OUT_T];
 static	int8 beta[CHANNEL_OUT_T];
@@ -32,7 +32,7 @@ void FracNet_T(
 
 	int8 conv_3x3_weight_all[NUM_3x3_WT][CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
 	int8 conv_1x1_weight_all[NUM_1x1_WT][CHANNEL_OUT_T][CHANNEL_IN_T],
-	int8 linear_weight[NUM_TILE][10][CHANNEL_OUT_T],
+	int8 linear_weight[10][512],
 
 	int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// BN output activation
     int8 out_buf_t1[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],		// Conv output activation
@@ -59,9 +59,7 @@ void FracNet_T(
 #pragma HLS ALLOCATION function instances=shortcut limit=1
 
 #pragma HLS ALLOCATION function instances=avgpool limit=1
-// #pragma HLS ALLOCATION function instances=avgpool_bp limit=1
 #pragma HLS ALLOCATION function instances=FC limit=1
-// #pragma HLS ALLOCATION function instances=FC_bp limit=1
 
 #pragma HLS ALLOCATION function instances=conv_3x3 limit=1
 #pragma HLS ALLOCATION function instances=conv_1x1 limit=1
@@ -121,8 +119,8 @@ void FracNet_T(
 	LOOP_GetImg:
 	for (int row = 0; row < 32; row ++) {
 		for (int col = 0; col < 32; col ++) {
-#pragma HLS pipeline
 			for (int b = 0; b < BATCH_SIZE; b ++) {
+#pragma HLS pipeline
 				for (int c = 0; c < 3; c ++) {
 					msb_fmap_tile_buffer_1[b][c][row][col] = image[b][c][row][col];
 					out_buf_t1[ini][b][c][row][col] = msb_fmap_tile_buffer_1[b][c][row][col];	// store image as the first input activation
@@ -794,20 +792,17 @@ void FracNet_T(
 	LOOP_FC:
 	fc_weight_ptr = 0;
 	ctrl_fc = 0;
-	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
-		fc_weight_ptr += 1;
-		load_fc_weights(
-			linear_weight_tile_buffer, linear_weight[fc_weight_ptr]
-		);
-		FC(
-			pool_out_buf, linear_weight_tile_buffer, linear_out_buf, ctrl_fc, c_out
-		);
-	}
+	load_fc_weights(
+		linear_weight_tile_buffer, linear_weight
+	);
+	FC(
+		pool_out_buf, linear_weight_tile_buffer, linear_out_buf, ctrl_fc
+	);
 
 	write_output:
-	for (int b = 0; b < BATCH_SIZE; b ++) {
+	for (int j = 0; j < 10; j ++) {
 #pragma HLS pipeline
-		for (int j = 0; j < 10; j ++) {
+		for (int b = 0; b < BATCH_SIZE; b ++) {
 			output[b][j] = linear_out_buf[b][j];
 		}
 	}
@@ -819,9 +814,9 @@ void FracNet_T(
 
 	error_calc:
 	// MSE for simplicity
-	for (int b = 0; b < BATCH_SIZE; b ++) {
-#pragma HLS pipeline
+
 		for (int j = 0; j < 10; j ++) {
+			for (int b = 0; b < BATCH_SIZE; b ++) {
 			error[b][j] = 2 * (linear_out_buf[b][j] - labels[j]);
 		}
 	}
@@ -831,32 +826,21 @@ void FracNet_T(
 //////////////		Backward path and Gradient Calc & Weight update		//////////////
 //////////////////////////////////////////////////////////////////////////////////////
 
+
 	////////////////////////////////////////////////
 	//////////// AvgPool and FC // /////////////////
 
 	// FC_bp
 	LOOP_FC_bp:
 	ctrl_fc = 1;
-	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		fc_weight_ptr -= 1;
-		load_fc_weights(
-			linear_weight_tile_buffer, linear_weight[fc_weight_ptr]
-		);
-		/* FC_bp(
-			error, linear_weight_tile_buffer, pool_out_buf
-		); */
-		FC(
-			pool_out_buf, linear_weight_tile_buffer, error, ctrl_fc, c_out
-		);
-	}
+	FC(
+		pool_out_buf, linear_weight_tile_buffer, error, ctrl_fc
+	);
 
 	// avgpool_bp
-	ctrl_avgpool = 1;
 	LOOP_AvgPool_bp:
-	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0;  c_out --) {
-		/* avgpool_bp(
-			pool_out_buf, msb_fmap_tile_buffer_1, c_out
-		); */
+	ctrl_avgpool = 1;
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 		avgpool(
 			msb_fmap_tile_buffer_1, pool_out_buf, ctrl_avgpool, c_out
 		);
