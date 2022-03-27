@@ -89,32 +89,17 @@ void FracNet_T(
 
 #pragma HLS ARRAY_PARTITION variable=pool_out_buf complete dim=2
 #pragma HLS ARRAY_PARTITION variable=linear_weight_tile_buffer complete dim=2
-*/
-/*
+
 #pragma HLS ARRAY_PARTITION variable=grad_buf_t0 complete dim=1
 #pragma HLS ARRAY_PARTITION variable=grad_buf_t0 complete dim=2
 #pragma HLS ARRAY_PARTITION variable=grad_buf_t1 complete dim=1
 #pragma HLS ARRAY_PARTITION variable=grad_buf_t1 complete dim=2
-*/
-/*
+
 #pragma HLS ARRAY_PARTITION variable=gamma complete dim=1
 #pragma HLS ARRAY_PARTITION variable=beta complete dim=1
 #pragma HLS ARRAY_PARTITION variable=grad_gamma complete dim=1
 #pragma HLS ARRAY_PARTITION variable=grad_beta complete dim=1
 */
-	// Initialize the buffers to 0
-	grad_buf_init:
-	for (int c_out = 0; c_out < CHANNEL_OUT_T; c_out ++) {
-		for (int c_in = 0; c_in < CHANNEL_IN_T; c_in ++) {
-			grad_buf_t1[c_out][c_in] = 0;
-#pragma HLS pipeline
-			for (int row = 0; row < 3; row ++){
-				for (int col = 0; col < 3; col ++){
-					grad_buf_t0[c_out][c_in][row][col] = 0;
-				}
-			}
-		}
-	}
 
 	int H_fmap_in, H_fmap_out, in_channels, in_channels_after_pack, out_channels_after_pack;
     int out_channels, out_channel_start, stride, conv_3x3_weight_ptr, conv_1x1_weight_ptr, fc_weight_ptr, ini;
@@ -164,21 +149,19 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
     }
@@ -202,26 +185,24 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
-					identity_shortcut(
-						msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer,
-						H_fmap_in
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
     }
@@ -234,25 +215,23 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-					shortcut(
-						msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
-						H_fmap_out, ctrl_sc	// generate and send out_copy into DDR
-					);
-				}
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc	// generate and send out_copy into DDR
+				);
 			}
 		}
     }
@@ -265,26 +244,24 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
-					identity_shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
-						H_fmap_in
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
     }
@@ -340,21 +317,19 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_1x1_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_1x1_weights(
-						conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
-					);
-					conv_1x1(
-						msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,	// conv+bn shortcut
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				conv_1x1(
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,	// conv+bn shortcut
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
     }
@@ -367,21 +342,19 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
     }
@@ -405,25 +378,23 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-					shortcut(
-						msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
-						H_fmap_out, ctrl_sc
-					);
-				}
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
     }
@@ -436,26 +407,24 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
-					identity_shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
-						H_fmap_in
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				// lsb_fmap[ini] = msb_fmap[ini]; 	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
     }
@@ -468,25 +437,23 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-					for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-					shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t1[ini],
-						H_fmap_out, ctrl_sc
-					);
-				}
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
 	}
@@ -510,21 +477,19 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_1x1_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_1x1_weights(
-						conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
-					);
-					conv_1x1(
-						msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,	// conv+bn shortcut
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				conv_1x1(
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,	// conv+bn shortcut
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
 	}
@@ -537,21 +502,19 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
 	}
@@ -575,25 +538,23 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-					shortcut(
-						msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
-						H_fmap_out, ctrl_sc
-					);
-				}
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
 	}
@@ -606,26 +567,24 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
-					identity_shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
-						H_fmap_in
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
 	}
@@ -638,25 +597,23 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-					shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t1[ini],
-						H_fmap_out, ctrl_sc
-					);	// CHANNEL_OUT_T = CHANNEL_IN_T
-				}
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);	// CHANNEL_OUT_T = CHANNEL_IN_T
 			}
 		}
 	}
@@ -680,21 +637,19 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_1x1_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_1x1_weights(
-						conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
-					);
-					conv_1x1(
-						msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,	// conv+bn shortcut
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				conv_1x1(
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,	// conv+bn shortcut
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
 	}
@@ -707,21 +662,19 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0, msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
 	}
@@ -745,25 +698,23 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_0,  msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-					shortcut(
-						msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
-						H_fmap_out, ctrl_sc
-					);	// CHANNEL_OUT_T = CHANNEL_IN_T
-				}
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_0,  msb_fmap_tile_buffer_1, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);	// CHANNEL_OUT_T = CHANNEL_IN_T
 			}
 		}
 	}
@@ -776,26 +727,24 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
-					identity_shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
-						H_fmap_in
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-				}
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
 			}
 		}
 	}
@@ -808,25 +757,23 @@ void FracNet_T(
 		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
 			conv_3x3_weight_ptr += 1;
 			for (int b = 0; b < BATCH_SIZE; b ++) {
-				for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
 
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
-						stride, H_fmap_out, c_tile
-					);
-					bn_relu(
-						msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
-						gamma, beta,
-						H_fmap_out
-					);
-					shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t1[ini],
-						H_fmap_out, ctrl_sc
-					);
-				}
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],
+					stride, H_fmap_out, c_in
+				);
+				bn_relu(
+					msb_fmap_tile_buffer_1, msb_fmap_tile_buffer_0, out_buf_t1[ini], relu_mask[ini],
+					gamma, beta,
+					H_fmap_out
+				);
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t1[ini],
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
 	}
@@ -838,11 +785,9 @@ void FracNet_T(
 	LOOP_AvgPool:
 	ctrl_avgpool = 0;
 	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
-		for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
-			avgpool(
-				msb_fmap_tile_buffer_1, pool_out_buf, ctrl_avgpool, c_tile
-			);
-		}
+		avgpool(
+			msb_fmap_tile_buffer_1, pool_out_buf, ctrl_avgpool, c_out
+		);
 	}
 
 	// FC
@@ -850,15 +795,13 @@ void FracNet_T(
 	fc_weight_ptr = 0;
 	ctrl_fc = 0;
 	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
-		for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
-			fc_weight_ptr += 1;
-			load_fc_weights(
-				linear_weight_tile_buffer, linear_weight[fc_weight_ptr]
-			);
-			FC(
-				pool_out_buf, linear_weight_tile_buffer, linear_out_buf, ctrl_fc, c_tile
-			);
-		}
+		fc_weight_ptr += 1;
+		load_fc_weights(
+			linear_weight_tile_buffer, linear_weight[fc_weight_ptr]
+		);
+		FC(
+			pool_out_buf, linear_weight_tile_buffer, linear_out_buf, ctrl_fc, c_out
+		);
 	}
 
 	write_output:
@@ -895,32 +838,28 @@ void FracNet_T(
 	LOOP_FC_bp:
 	ctrl_fc = 1;
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
-			fc_weight_ptr -= 1;
-			load_fc_weights(
-				linear_weight_tile_buffer, linear_weight[fc_weight_ptr]
-			);
-			/* FC_bp(
-				error, linear_weight_tile_buffer, pool_out_buf
-			); */
-			FC(
-				pool_out_buf, linear_weight_tile_buffer, error, ctrl_fc, c_tile
-			);
-		}
+		fc_weight_ptr -= 1;
+		load_fc_weights(
+			linear_weight_tile_buffer, linear_weight[fc_weight_ptr]
+		);
+		/* FC_bp(
+			error, linear_weight_tile_buffer, pool_out_buf
+		); */
+		FC(
+			pool_out_buf, linear_weight_tile_buffer, error, ctrl_fc, c_out
+		);
 	}
 
 	// avgpool_bp
 	ctrl_avgpool = 1;
 	LOOP_AvgPool_bp:
 	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0;  c_out --) {
-		for (int c_tile = 0; c_tile < in_channels_after_pack; c_tile ++) {
-			/* avgpool_bp(
-				pool_out_buf, msb_fmap_tile_buffer_1, c_out
-			); */
-			avgpool(
-				msb_fmap_tile_buffer_1, pool_out_buf, ctrl_avgpool, c_tile
-			);
-		}
+		/* avgpool_bp(
+			pool_out_buf, msb_fmap_tile_buffer_1, c_out
+		); */
+		avgpool(
+			msb_fmap_tile_buffer_1, pool_out_buf, ctrl_avgpool, c_out
+		);
 	}
 
 	////////////////////////////////////////////////
@@ -944,7 +883,6 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
 				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
 				identity_shortcut(
@@ -961,20 +899,19 @@ void FracNet_T(
 				);
 				conv_3x3_rot_bp(
 					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
-					stride, H_fmap_in, H_fmap_out, c_tile
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
 				);
 				///////////////////////////
 				// conv_3x3_weight_grad_cal
 				conv_3x3_grad(
 					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
-					stride, H_fmap_in, c_tile
+					stride, H_fmap_in
 				);
 				SGD_WU_3x3(
 					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 				);
 				// end gradient calculation
 				//////////////////////////
-				}
 			}
 		}
     }
@@ -987,37 +924,35 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					///////////////////////////
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-					shortcut(
-						msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
-						H_fmap_out, ctrl_sc
-					);
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				///////////////////////////
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
     }
@@ -1030,32 +965,30 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
     }
@@ -1079,32 +1012,30 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, lsb_fmap_tile_buffer,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - 2*out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, lsb_fmap_tile_buffer,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 2*out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
     }
@@ -1117,36 +1048,34 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_1x1_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					load_conv_1x1_weights(
-						conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
-					);
-					bn_bp(
-						msb_fmap_tile_buffer_0, out_buf_t0[ini], msb_fmap_tile_buffer_1,	// conv+bn shortcut
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					conv_1x1_rot_bp(	// note the index of shortcut input
-						msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_1x1_weight_grad_cal
-					conv_1x1_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t1,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_1x1(
-						grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-					shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
-						H_fmap_out, ctrl_sc
-					);
-				}
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				bn_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], msb_fmap_tile_buffer_1,	// conv+bn shortcut
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				conv_1x1_rot_bp(	// note the index of shortcut input
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_1x1_weight_grad_cal
+				conv_1x1_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t1,
+					stride, H_fmap_in
+				);
+				SGD_WU_1x1(
+					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
     }
@@ -1171,7 +1100,6 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
 					// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
 					identity_shortcut(
@@ -1188,20 +1116,19 @@ void FracNet_T(
 					);
 					conv_3x3_rot_bp(
 						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
-						stride, H_fmap_in, H_fmap_out, c_tile
+						stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
 					);
 					///////////////////////////
 					// conv_3x3_weight_grad_cal
 					conv_3x3_grad(
 						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
-						stride, H_fmap_in, c_tile
+						stride, H_fmap_in
 					);
 					SGD_WU_3x3(
 						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
 					);
 					// end gradient calculation
-					//////////////////////////
-				}
+					///////////////////////////
 			}
 		}
 	}
@@ -1214,36 +1141,34 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-					shortcut(
-						msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
-						H_fmap_out, ctrl_sc
-					);
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
 	}
@@ -1256,32 +1181,30 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
 	}
@@ -1305,32 +1228,30 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, lsb_fmap_tile_buffer,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - 2*out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, lsb_fmap_tile_buffer,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - 2*out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
 	}
@@ -1343,36 +1264,34 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_1x1_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					load_conv_1x1_weights(
-						conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
-					);
-					bn_bp(
-						msb_fmap_tile_buffer_0, out_buf_t0[ini], msb_fmap_tile_buffer_1,	// conv+bn shortcut
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					conv_1x1_rot_bp(	// note the index of shortcut input
-						msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_1x1_weight_grad_cal
-					conv_1x1_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t1,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_1x1(
-						grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-					shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
-						H_fmap_out, ctrl_sc
-					);
-				}
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				bn_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], msb_fmap_tile_buffer_1,	// conv+bn shortcut
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				conv_1x1_rot_bp(	// note the index of shortcut input
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_1x1_weight_grad_cal
+				conv_1x1_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t1,
+					stride, H_fmap_in
+				);
+				SGD_WU_1x1(
+					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
 	}
@@ -1396,37 +1315,35 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
-					identity_shortcut(
-						msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer,
-						H_fmap_in
-					);
-					bn_relu_bp(
-						msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-				}
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
 	}
@@ -1439,36 +1356,34 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-					shortcut(
-						msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
-						H_fmap_out, ctrl_sc
-					);
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
 	}
@@ -1481,32 +1396,30 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
 	}
@@ -1530,32 +1443,30 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, lsb_fmap_tile_buffer,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini-1 - 2*out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, lsb_fmap_tile_buffer,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini-1 - 2*out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
 	}
@@ -1568,36 +1479,34 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_1x1_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					load_conv_1x1_weights(
-						conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
-					);
-					bn_bp(
-						msb_fmap_tile_buffer_0, out_buf_t0[ini], msb_fmap_tile_buffer_1,	// conv+bn shortcut
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					conv_1x1_rot_bp(	// note the index of shortcut input
-						msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_1x1_weight_grad_cal
-					conv_1x1_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t1,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_1x1(
-						grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-					shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
-						H_fmap_out, ctrl_sc
-					);
-				}
+				load_conv_1x1_weights(
+					conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				bn_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], msb_fmap_tile_buffer_1,	// conv+bn shortcut
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				conv_1x1_rot_bp(	// note the index of shortcut input
+					msb_fmap_tile_buffer_1, conv_1x1_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_1x1_weight_grad_cal
+				conv_1x1_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t1,
+					stride, H_fmap_in
+				);
+				SGD_WU_1x1(
+					grad_buf_t1, conv_1x1_weight_tile_buffer, conv_1x1_weight_all[conv_1x1_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
 	}
@@ -1621,37 +1530,35 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
-					identity_shortcut(
-						msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer,
-						H_fmap_in
-					);
-					bn_relu_bp(
-						msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-				}
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
     }
@@ -1664,36 +1571,34 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-					shortcut(
-						msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
-						H_fmap_out, ctrl_sc
-					);
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_1, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_0, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
     }
@@ -1706,37 +1611,35 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
-					identity_shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
-						H_fmap_in
-					);
-					bn_relu_bp(
-						msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-				}
+				// lsb_fmap[ini] = msb_fmap[ini];	// identity branch
+				identity_shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer,
+					H_fmap_in
+				);
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
     }
@@ -1749,36 +1652,34 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-					shortcut(
-						msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
-						H_fmap_out, ctrl_sc
-					);
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_0, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_1, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_1, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
+				shortcut(
+					msb_fmap_tile_buffer_0, lsb_fmap_tile_buffer, msb_fmap_tile_buffer_1, out_buf_t0[ini],	// DDR not used
+					H_fmap_out, ctrl_sc
+				);
 			}
 		}
     }
@@ -1800,32 +1701,30 @@ void FracNet_T(
 		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
 			conv_3x3_weight_ptr -= 1;
 			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				for (int c_tile = 0; c_tile < out_channels_after_pack; c_tile ++) {
 
-					bn_relu_bp(
-						msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
-						gamma, grad_gamma, grad_beta,
-						H_fmap_out
-					);
-					load_conv_3x3_weights(
-						conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					conv_3x3_rot_bp(
-						msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
-						stride, H_fmap_in, H_fmap_out, c_tile
-					);
-					///////////////////////////
-					// conv_3x3_weight_grad_cal
-					conv_3x3_grad(
-						out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
-						stride, H_fmap_in, c_tile
-					);
-					SGD_WU_3x3(
-						grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
-					);
-					// end gradient calculation
-					///////////////////////////
-				}
+				bn_relu_bp(
+					msb_fmap_tile_buffer_1, out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0,
+					gamma, grad_gamma, grad_beta,
+					H_fmap_out
+				);
+				load_conv_3x3_weights(
+					conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				conv_3x3_rot_bp(
+					msb_fmap_tile_buffer_0, conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_1,
+					stride, H_fmap_in, H_fmap_out, c_out, out_channels_after_pack
+				);
+				///////////////////////////
+				// conv_3x3_weight_grad_cal
+				conv_3x3_grad(
+					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0, grad_buf_t0,
+					stride, H_fmap_in
+				);
+				SGD_WU_3x3(
+					grad_buf_t0, conv_3x3_weight_tile_buffer, conv_3x3_weight_all[conv_3x3_weight_ptr]
+				);
+				// end gradient calculation
+				///////////////////////////
 			}
 		}
     }

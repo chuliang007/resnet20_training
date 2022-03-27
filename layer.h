@@ -260,17 +260,18 @@ void avgpool(
 {
 // #pragma HLS ARRAY_PARTITION variable=avg_inputs complete dim=2
 
-	for (int bi = 0; bi < BATCH_SIZE; bi ++) {
+	if (c_tile == 0) {
 		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-			if (c_tile == 0 && ctrl_avgpool == 0) {
 // #pragma HLS PIPELINE
-				out_buf[bi][ci] = 0;
-			}
-			for (int row = 0; row < 4; row ++) {
-				for (int col = 0; col < 4; col ++) {
-// #pragma HLS PIPELINE
-					if (c_tile == 0 && ctrl_avgpool == 1) {
-						avg_inputs[bi][ci][row][col] = 0;
+			for (int bi = 0; bi < BATCH_SIZE; bi ++) {
+				if (ctrl_avgpool == 1) {
+					out_buf[bi][ci] = 0;
+				}
+				if (ctrl_avgpool == 1) {
+					for (int row = 0; row < 4; row ++) {
+						for (int col = 0; col < 4; col ++) {
+							avg_inputs[bi][ci][row][col] = 0;
+						}
 					}
 				}
 			}
@@ -336,17 +337,19 @@ void FC(
 // #pragma HLS ARRAY_PARTITION variable=inputs complete dim=2
 // #pragma HLS ARRAY_PARTITION variable=linear_weight complete dim=2
 
-	for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-		for (int ii = 0; ii < 10; ii ++) {
+	if (c_tile == 0) {
+		for (int bi = 0; bi < BATCH_SIZE; bi ++) {
+			if (ctrl_fc == 0) {
+				for (int ii = 0; ii < 10; ii ++) {
 // #pragma HLS PIPELINE
-			if (c_tile == 0 && ctrl_fc == 0) {
-				outputs[bi][ii] = 0;
+					outputs[bi][ii] = 0;
+				}
 			}
-		}
-		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			if (ctrl_fc == 1) {
+				for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 // #pragma HLS PIPELINE
-			if (c_tile == 0 && ctrl_fc == 1) {
-				inputs[bi][co] = 0;
+					inputs[bi][co] = 0;
+				}
 			}
 		}
 	}
@@ -433,20 +436,19 @@ void conv_3x3
 	int stride,
 	// int H_fmap_in,
 	int H_fmap_out,
-	int c_tile
+	int c_tile	// c_in in forward and c_out in backward
 )
 {
 // #pragma HLS ARRAY_PARTITION variable=input complete dim=2
 // #pragma HLS ARRAY_PARTITION variable=weight complete dim=1
 // #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int row = 0; row < H_fmap_out; row ++) {
+	if (c_tile == 0){
+		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int row = 0; row < H_fmap_out; row ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-			for (int col = 0; col < H_fmap_out; col ++) {
+				for (int col = 0; col < H_fmap_out; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-				for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-					if (c_tile == 0){
+					for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 						output[bi][co][row][col] = 0;
 					}
 				}
@@ -463,7 +465,7 @@ void conv_3x3
 					for (int row = 0; row < H_fmap_out; row ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 						for (int col = 0; col < H_fmap_out; col ++) {
-		#pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
+#pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 // #pragma HLS PIPELINE
 							for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 								int row_in = row*stride + krow;		
@@ -545,7 +547,8 @@ void conv_3x3_rot_bp
 	int stride,
 	int H_fmap_in,
 	int H_fmap_out,
-	int c_tile
+	int c_tile,
+	int out_channels_after_pack
 )
 {
 // #pragma HLS ARRAY_PARTITION variable=input complete dim=2
@@ -559,13 +562,13 @@ void conv_3x3_rot_bp
 // #pragma HLS ARRAY_PARTITION variable=weight_rot complete dim=1
 // #pragma HLS ARRAY_PARTITION variable=weight_rot complete dim=2
 
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int row = 0; row < H_fmap_out; row ++) {
+	if (c_tile == out_channels_after_pack - 1) {
+		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int row = 0; row < H_fmap_out; row ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-			for (int col = 0; col < H_fmap_out; col ++) {
+				for (int col = 0; col < H_fmap_out; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-				for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-					if (c_tile == 0){
+					for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 						output[bi][co][row][col] = 0;
 					}
 				}
@@ -629,7 +632,8 @@ void conv_1x1_rot_bp
 	int stride,
 	int H_fmap_in,
 	int H_fmap_out,
-	int c_tile
+	int c_tile,
+	int out_channels_after_pack
 )
 {
 // #pragma HLS ARRAY_PARTITION variable=input complete dim=2
@@ -643,13 +647,13 @@ void conv_1x1_rot_bp
 // #pragma HLS ARRAY_PARTITION variable=weight_rot complete dim=2
 // #pragma HLS ARRAY_PARTITION variable=input_dil complete dim=2
 
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int row = 0; row < H_fmap_out; row ++) {
+	if (c_tile == out_channels_after_pack - 1) {
+		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int row = 0; row < H_fmap_out; row ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-			for (int col = 0; col < H_fmap_out; col ++) {
+				for (int col = 0; col < H_fmap_out; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-				for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-					if (c_tile == 0){
+					for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 						output[bi][co][row][col] = 0;
 					}
 				}
@@ -707,23 +711,21 @@ void conv_3x3_grad
 	int8 output[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],			// gradient on-chip
 
 	int stride,
-	int H_fmap_in,
-	int c_tile
+	int H_fmap_in
 	// int k_row_in	// weight size (error as weight), k_row_in = H_fmap_in
 )
 {
 // #pragma HLS ARRAY_PARTITION variable=input complete dim=2
 // #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
 
+	// initialize grad_buf
 	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 			for (int row = 0; row < 3; row ++) {
 				for (int col = 0; col < 3; col ++) {
 // #pragma HLS PIPELINE
 					for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-						if (c_tile == 0){
-							output[co][ci][row][col] = 0;
-						}
+						output[co][ci][row][col] = 0;
 					}
 				}
 			}
@@ -779,21 +781,19 @@ void conv_1x1_grad
 	int8 output[CHANNEL_OUT_T][CHANNEL_IN_T],				// gradient on-chip
 	
 	int stride,
-	int H_fmap_in,
-	int c_tile
+	int H_fmap_in
 	// int k_row_in	// weight size (error as weight), k_row_in = H_fmap_in
 )
 {
 // #pragma HLS ARRAY_PARTITION variable=input complete dim=2
 // #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
 
+	// initialize grad_buf
 	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 // #pragma HLS PIPELINE
 			for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-				if (c_tile == 0){
-					output[co][ci] = 0;
-				}
+				output[co][ci] = 0;
 			}
 		}
 	}
