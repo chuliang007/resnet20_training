@@ -27,7 +27,7 @@ int main()
 	/////////// Conv 1 + bn 1 + relu 1 /////////////
 	////////////////////////////////////////////////
 
-	in_channels = 64;
+	in_channels = 3;
 	in_channels_after_pack = 1;
 	out_channels = 64;
 	H_fmap_in =32;
@@ -37,24 +37,22 @@ int main()
 
 	printf("\n======= Conv 1 + bn 1 + relu 1 ======= \n");
     LOOP_Conv1:
-	for (int c_in = 0; c_in < in_channels/CHANNEL_IN_T; c_in ++) {
-		ini += 1;	// ini = 1
-		for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
-			conv_3x3_weight_ptr += 1;
-			for (int b = 0; b < BATCH_SIZE; b ++) {
-				/* conv_3x3(
-					msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0[c_in], out_buf_t0[ini],
-					stride, H_fmap_out
-				);
-				bn_relu(
-					msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_1[c_in], out_buf_t1[ini], relu_mask[ini],
-					gamma, beta,
-					H_fmap_out
-				); */
-				printf("Conv 1 out_buf_t1: %d in batch %d\n", ini, b);
-			}
+	ini += 1;
+	for (int c_out = 0; c_out < out_channels/CHANNEL_OUT_T; c_out ++) {
+		conv_3x3_weight_ptr += 1;
+		for (int b = 0; b < BATCH_SIZE; b ++) {
+			/* conv_3x3(
+				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_tile_buffer, msb_fmap_tile_buffer_0[c_in], out_buf_t0[ini],
+				stride, H_fmap_out
+			);
+			bn_relu(
+				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_1[c_in], out_buf_t1[ini], relu_mask[ini],
+				gamma, beta,
+				H_fmap_out
+			); */
+			printf("Conv 1 out_buf_t1: %d in batch %d\n", ini, b);
 		}
-    }
+	}
 
 	////////////////////////////////////////////////
 	//////////// LAYER 2 Downsample ////////////////
@@ -368,30 +366,28 @@ int main()
 
 	in_channels = 64;
 	in_channels_after_pack = 1;
-	out_channels = 64;
+	out_channels = 3;
 	H_fmap_in =32;
 	H_fmap_out = 32;
 	stride = 1;
 
 	printf("\n======= Conv 1 bp ======= \n");
     LOOP_Conv1_bp:
-	for (int c_out = out_channels/CHANNEL_OUT_T - 1; c_out >= 0; c_out --) {
-		ini -= 1;	// ini = 1
-		for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
-			conv_3x3_weight_ptr -= 1;
-			for (int b = BATCH_SIZE - 1; b >= 0; b --) {
-				///////////////////////////
-				// conv_3x3_weight_grad_cal
-				/* conv_3x3_grad(
-					out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0[c_out], grad_buf_t0,
-					stride, H_fmap_in
-				); */
-				// end gradient calculation
-				///////////////////////////
-				printf("Image input bp out_buf_t1: %d in batch %d\n", ini - out_channels/CHANNEL_OUT_T + 1, b);
-			}
+	ini -= 1;
+	for (int c_in = in_channels/CHANNEL_IN_T - 1; c_in >=0; c_in --) {
+		conv_3x3_weight_ptr -= 1;
+		for (int b = BATCH_SIZE - 1; b >= 0; b --) {
+			///////////////////////////
+			// conv_3x3_weight_grad_cal
+			/* conv_3x3_grad(
+				out_buf_t1[ini - out_channels/CHANNEL_OUT_T ], msb_fmap_tile_buffer_0[c_out], grad_buf_t0,
+				stride, H_fmap_in
+			); */
+			// end gradient calculation
+			///////////////////////////
+			printf("Image input bp out_buf_t1: %d in batch %d\n", ini - out_channels/CHANNEL_OUT_T, b);
 		}
-    }
+	}
 }	// end FracBNN_T
 
 /*

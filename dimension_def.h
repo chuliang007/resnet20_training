@@ -3,7 +3,7 @@ This file defines some dimension parameters
 used in the accelerator.
 */
 #define lr 0.01
-#define BATCH_SIZE 4
+#define BATCH_SIZE 8
 
 #define NUM_3x3_WT 300
 #define NUM_1x1_WT 43
