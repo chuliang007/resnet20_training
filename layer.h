@@ -260,23 +260,6 @@ void avgpool(
 {
 // #pragma HLS ARRAY_PARTITION variable=avg_inputs complete dim=2
 
-	for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-#pragma HLS PIPELINE
-		for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-			if (ctrl_avgpool == 0) {
-				for (int c_tile = 0; c_tile < 512/CHANNEL_IN_T; c_tile ++) {
-					out_buf[bi][ci + c_tile*CHANNEL_IN_T] = 0;
-				}
-			} else {
-				for (int row = 0; row < 4; row ++) {
-					for (int col = 0; col < 4; col ++) {
-						avg_inputs[bi][ci][row][col] = 0;
-					}
-				}
-			}
-		}
-	}
-
 	// int H_fmap_OUT = H_fmap/stride;
 	// int stride2 = stride*stride;
 	for (int c = 0; c < 512; c ++) {
@@ -335,28 +318,17 @@ void FC(
 // #pragma HLS ARRAY_PARTITION variable=inputs complete dim=2
 // #pragma HLS ARRAY_PARTITION variable=linear_weight complete dim=2
 
-	for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-		if (ctrl_fc == 0) {
-			for (int ii = 0; ii < 10; ii ++) {
-#pragma HLS PIPELINE
-				outputs[bi][ii] = 0;
-			}
-		} else {
-			for (int co = 0; co < 512; co ++) {
-#pragma HLS PIPELINE
-				inputs[bi][co] = 0;
-			}
-		}
-	}
+	int8 linear_weight_tranpose[512][10];
+// #pragma HLS ARRAY_PARTITION variable=linear_weight_tranpose complete dim=1
 
 	for (int cii = 0; cii < 512; cii++) {
+#pragma HLS pipeline
 		for (int coo = 0; coo < 10; coo ++) {
-#pragma HLS PIPELINE
 			for (int bii = 0; bii < BATCH_SIZE; bii++) {
 				if (ctrl_fc == 0) {
 					outputs[bii][coo] += inputs[bii][cii] * linear_weight[coo][cii];
 				} else {
-					inputs[bii][coo] += outputs[bii][coo] * linear_weight[coo][cii];
+					inputs[bii][cii] += outputs[bii][coo] * linear_weight_tranpose[cii][coo];
 				}
 			}
 		}
@@ -494,13 +466,13 @@ void conv_1x1
 // #pragma HLS ARRAY_PARTITION variable=weight complete dim=1
 // #pragma HLS ARRAY_PARTITION variable=weight complete dim=2
 
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int row = 0; row < H_fmap_out; row ++) {
+	if (c_tile == 0){
+		for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int row = 0; row < H_fmap_out; row ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-			for (int col = 0; col < H_fmap_out; col ++) {
+				for (int col = 0; col < H_fmap_out; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-				for (int bi = 0; bi < BATCH_SIZE; bi ++) {
-					if (c_tile == 0){
+					for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 						output[bi][co][row][col] = 0;
 					}
 				}
@@ -648,8 +620,8 @@ void conv_1x1_rot_bp
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 				for (int col = 0; col < H_fmap_out; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
 					for (int bi = 0; bi < BATCH_SIZE; bi ++) {
+#pragma HLS PIPELINE
 						output[bi][co][row][col] = 0;
 					}
 				}
@@ -683,7 +655,7 @@ void conv_1x1_rot_bp
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
 				for (int col = 0; col < H_fmap_out; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 4 max = 4
-#pragma HLS PIPELINE
+// #pragma HLS PIPELINE
 					for (int bi = 0; bi < BATCH_SIZE; bi ++) {
 						int row_in = row;	// stride 1 transposed conv, krow = kcol = 0
 						int col_in = col;
