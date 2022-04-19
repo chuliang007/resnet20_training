@@ -6,18 +6,18 @@
 #include <ap_int.h>
 #include <ap_fixed.h>
 
-//#define SW_TEST
-//#define LAYER_TEST
+#define SW_TEST
+#define LAYER_TEST
 #define True 1
 #define False 0
 
 #ifdef SW_TEST
-	typedef float FIX_32_4;	//fix point
+	typedef float FIX_32_4;		//fix point
 	typedef float FIX_32_25;	//fix point
-	typedef float FIX_FM;	//fix point for feature map
+	typedef float FIX_FM;		//fix point for feature map
 	typedef float FIX_FM_acc;	//fix point for feature map
 	typedef float FIX_FM_last;
-	typedef float FIX_WT;	//fix point for weights
+	typedef float FIX_WT;		//fix point for weights
 	typedef float FIX_32_16;
 	typedef float FIX_32_10;
 	typedef float FIX_32_12;
