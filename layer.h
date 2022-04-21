@@ -21,10 +21,10 @@ void identity_shortcut(
 )
 {
 	int8 temp;
-#pragma HLS ARRAY_PARTITION variable=msb_in complete dim=1
-#pragma HLS ARRAY_PARTITION variable=msb_in complete dim=2
-#pragma HLS ARRAY_PARTITION variable=lsb_out complete dim=1
-#pragma HLS ARRAY_PARTITION variable=lsb_out complete dim=2
+#pragma HLS ARRAY_PARTITION variable=msb_in dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=msb_in dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=lsb_out dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=lsb_out dim=2 complete
 
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
@@ -49,7 +49,7 @@ void avgpool(
 )
 {
 	int8 out_temp;
-#pragma HLS ARRAY_PARTITION variable=avg_inputs complete dim=2
+#pragma HLS ARRAY_PARTITION variable=avg_inputs dim=2 complete
 
 	for (int c = 0; c < CHANNEL_IN_T; c ++) {
 		for (int n = 0; n < BATCH_SIZE; n ++) {
@@ -91,8 +91,8 @@ void FC(
 {
 	int8 out_temp[10];
 	int8 in_temp[64];
-#pragma HLS ARRAY_PARTITION variable=inputs complete dim=2
-#pragma HLS ARRAY_PARTITION variable=in_temp complete dim=1
+#pragma HLS ARRAY_PARTITION variable=inputs dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=in_temp dim=1 complete
 
 	for (int bii = 0; bii < BATCH_SIZE; bii++) {
 #pragma HLS PIPELINE
@@ -102,7 +102,7 @@ void FC(
 			for (int coo = 0; coo < 10; coo ++) {
 				for (int cii = 0; cii < 64; cii++) {
 #pragma HLS LATENCY MAX = 1
-#pragma HLS ARRAY_PARTITION variable=linear_weight complete dim=1
+#pragma HLS ARRAY_PARTITION variable=linear_weight dim=1 complete
 					int8 act = inputs[bii][cii];
 					int8 wt = linear_weight[coo][cii];
 					out_temp[coo] += act * wt;
@@ -117,7 +117,7 @@ void FC(
 			for (int cii = 0; cii < 64; cii++) {
 				for (int coo = 0; coo < 10; coo ++) {
 #pragma HLS LATENCY MAX = 1
-#pragma HLS ARRAY_PARTITION variable=linear_weight complete dim=1
+#pragma HLS ARRAY_PARTITION variable=linear_weight dim=1 complete
 					int8 act = outputs[bii][coo];
 					int8 wt = linear_weight[coo][cii];
 					in_temp[cii] += act * wt;
@@ -142,11 +142,11 @@ void shortcut(
 )
 {
 	int8 out_temp[BATCH_SIZE][CHANNEL_OUT_T];
-#pragma HLS ARRAY_PARTITION variable=input_a complete dim=2
-#pragma HLS ARRAY_PARTITION variable=input_b complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_buf complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_buf_DDR complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_temp complete dim=2
+#pragma HLS ARRAY_PARTITION variable=input_a dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=input_b dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_buf dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_buf_DDR dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=2 complete
 
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
@@ -187,15 +187,15 @@ void bn(
 	int N = BATCH_SIZE * H_fmap_in * H_fmap_in;
 	int8 mu[CHANNEL_OUT_T];
 	int8 sigma[CHANNEL_OUT_T];
-#pragma HLS ARRAY_PARTITION variable=mu complete dim=1
-#pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
+#pragma HLS ARRAY_PARTITION variable=mu dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=sigma dim=1 complete
 
 	int8 in_temp[BATCH_SIZE][CHANNEL_OUT_T];
 	int8 out_temp[BATCH_SIZE][CHANNEL_OUT_T];
-#pragma HLS ARRAY_PARTITION variable=bn_inputs complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_buf complete dim=2
-#pragma HLS ARRAY_PARTITION variable=in_temp complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_temp complete dim=2
+#pragma HLS ARRAY_PARTITION variable=bn_inputs dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_buf dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=in_temp dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=2 complete
 
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
@@ -247,17 +247,17 @@ void bn_bp(
 	int N = BATCH_SIZE * H_fmap_in * H_fmap_in;
 	int8 mu[CHANNEL_OUT_T];
 	int8 sigma[CHANNEL_OUT_T];
-#pragma HLS ARRAY_PARTITION variable=mu complete dim=1
-#pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
+#pragma HLS ARRAY_PARTITION variable=mu dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=sigma dim=1 complete
 
 	int8 error_temp[BATCH_SIZE][CHANNEL_OUT_T];
 	int8 in_temp[BATCH_SIZE][CHANNEL_OUT_T];
 	int8 out_temp[BATCH_SIZE][CHANNEL_OUT_T];
-#pragma HLS ARRAY_PARTITION variable=bn_inputs_fw complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_buf complete dim=2
-#pragma HLS ARRAY_PARTITION variable=error_temp complete dim=2
-#pragma HLS ARRAY_PARTITION variable=in_temp complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_temp complete dim=2
+#pragma HLS ARRAY_PARTITION variable=bn_inputs_fw dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_buf dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=error_temp dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=in_temp dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=2 complete
 
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
@@ -319,16 +319,16 @@ void bn_relu(
 	int N = BATCH_SIZE * H_fmap * H_fmap;
 	int8 mu[CHANNEL_OUT_T];
 	int8 sigma[CHANNEL_OUT_T];
-#pragma HLS ARRAY_PARTITION variable=mu complete dim=1
-#pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
+#pragma HLS ARRAY_PARTITION variable=mu dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=sigma dim=1 complete
 
 	int1 relu_temp[BATCH_SIZE][CHANNEL_OUT_T];
 	int8 out_temp[BATCH_SIZE][CHANNEL_OUT_T];
 	int8 in_temp[BATCH_SIZE][CHANNEL_OUT_T];
-#pragma HLS ARRAY_PARTITION variable=relu_temp complete dim=2
-#pragma HLS ARRAY_PARTITION variable=relu_mask complete dim=2
-#pragma HLS ARRAY_PARTITION variable=in_temp complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_temp complete dim=2
+#pragma HLS ARRAY_PARTITION variable=relu_temp dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=relu_mask dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=in_temp dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=2 complete
 
 	for (int row = 0; row < H_fmap; row ++) {
 		for (int col = 0; col < H_fmap; col ++) {
@@ -389,17 +389,17 @@ void bn_relu_bp(
 	int N = BATCH_SIZE * WIDTH * WIDTH;
 	int8 mu[CHANNEL_OUT_T];
 	int8 sigma[CHANNEL_OUT_T];
-#pragma HLS ARRAY_PARTITION variable=mu complete dim=1
-#pragma HLS ARRAY_PARTITION variable=sigma complete dim=1
+#pragma HLS ARRAY_PARTITION variable=mu dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=sigma dim=1 complete
 
 	int8 error_temp[BATCH_SIZE][CHANNEL_OUT_T];
 	int8 in_temp[BATCH_SIZE][CHANNEL_OUT_T];
 	int8 out_temp[BATCH_SIZE][CHANNEL_OUT_T];
-#pragma HLS ARRAY_PARTITION variable=bn_inputs_fw complete dim=2
-#pragma HLS ARRAY_PARTITION variable=relu_mask complete dim=2
-#pragma HLS ARRAY_PARTITION variable=error_temp complete dim=2
-#pragma HLS ARRAY_PARTITION variable=in_temp complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_temp complete dim=2
+#pragma HLS ARRAY_PARTITION variable=bn_inputs_fw dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=relu_mask dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=error_temp dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=in_temp dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=2 complete
 
 	for (int row = 0; row < H_fmap; row ++) {
 		for (int col = 0; col < H_fmap; col ++) {
@@ -465,13 +465,13 @@ void conv_3x3
 {
 	int8 out_temp[CHANNEL_OUT_T];
 // #pragma HLS DEPENDENCE variable=output array inter false
-#pragma HLS ARRAY_PARTITION variable=input complete dim=2
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=3
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=4
-#pragma HLS ARRAY_PARTITION variable=output complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_temp complete dim=1
+#pragma HLS ARRAY_PARTITION variable=input dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=3 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=4 complete
+#pragma HLS ARRAY_PARTITION variable=output dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
 
 	LOOP_TILE:
 	for (int row = 0; row < H_fmap_out; row++) {
@@ -542,11 +542,11 @@ void conv_1x1
 {
 	int8 out_temp[CHANNEL_OUT_T];
 // #pragma HLS DEPENDENCE variable=output array inter false
-#pragma HLS ARRAY_PARTITION variable=input complete dim=2
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-#pragma HLS ARRAY_PARTITION variable=output complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_temp complete dim=1
+#pragma HLS ARRAY_PARTITION variable=input dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=output dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
 
 	for (int row = 0; row < H_fmap_out; row++) {
 		for (int col = 0; col < H_fmap_out; col++) {
@@ -566,6 +566,7 @@ void conv_1x1
 				// conv 1x1
 				for (int co = 0; co < CHANNEL_OUT_T; co++) {
 					int8 accum = 0;
+#pragma HLS UNROLL
 					for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
 #pragma HLS UNROLL
 #pragma HLS LATENCY MAX = 1
@@ -610,13 +611,13 @@ void conv_3x3_rot_bp
 {
 	int8 out_temp[CHANNEL_OUT_T];
 // #pragma HLS DEPENDENCE variable=output array inter false
-#pragma HLS ARRAY_PARTITION variable=input complete dim=2
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=3
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=4
-#pragma HLS ARRAY_PARTITION variable=output complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_temp complete dim=1
+#pragma HLS ARRAY_PARTITION variable=input dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=3 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=4 complete
+#pragma HLS ARRAY_PARTITION variable=output dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
 
 	// tranposed conv
 	LOOP_TRANSPOSED_CONV:
@@ -684,11 +685,11 @@ void conv_1x1_rot_bp
 {
 	int8 out_temp[CHANNEL_OUT_T];
 // #pragma HLS DEPENDENCE variable=output array inter false
-#pragma HLS ARRAY_PARTITION variable=input complete dim=2
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-#pragma HLS ARRAY_PARTITION variable=output complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_temp complete dim=1
+#pragma HLS ARRAY_PARTITION variable=input dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=output dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
 
 	// tranposed conv
 	LOOP_TRANSPOSED_CONV:
@@ -712,6 +713,7 @@ void conv_1x1_rot_bp
 				// conv 1x1
 				for (int co = 0; co < CHANNEL_OUT_T; co++) {
 					int8 accum = 0;
+#pragma HLS UNROLL
 					for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
 #pragma HLS UNROLL
 #pragma HLS LATENCY MAX = 1
@@ -755,13 +757,13 @@ void conv_3x3_grad
 {
 	int8 out_temp[CHANNEL_OUT_T];
 // #pragma HLS DEPENDENCE variable=output array inter false
-#pragma HLS ARRAY_PARTITION variable=input complete dim=2
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-#pragma HLS ARRAY_PARTITION variable=output complete dim=1
-#pragma HLS ARRAY_PARTITION variable=output complete dim=2
-#pragma HLS ARRAY_PARTITION variable=output complete dim=3
-#pragma HLS ARRAY_PARTITION variable=output complete dim=4
-#pragma HLS ARRAY_PARTITION variable=out_temp complete dim=1
+#pragma HLS ARRAY_PARTITION variable=input dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=output dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=output dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=output dim=3 complete
+#pragma HLS ARRAY_PARTITION variable=output dim=4 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
 
 	// dilated conv
 	LOOP_DILATED_CONV:
@@ -773,6 +775,7 @@ void conv_3x3_grad
 					// dilated conv
 					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 						int8 accum = 0;
+#pragma HLS UNROLL
 						for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 #pragma HLS UNROLL
 							for (int bi = 0; bi < BATCH_SIZE; bi ++) {
@@ -791,9 +794,9 @@ void conv_3x3_grad
 					}
 					// write out
 					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-						for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 #pragma HLS UNROLL
 #pragma HLS LATENCY MAX = 1
+						for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 							output[co][ci][row][col] = out_temp[co];
 						}
 					}
@@ -816,10 +819,10 @@ void conv_1x1_grad
 {
 	int8 out_temp[CHANNEL_OUT_T];
 // #pragma HLS DEPENDENCE variable=output array inter false
-#pragma HLS ARRAY_PARTITION variable=input complete dim=2
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-#pragma HLS ARRAY_PARTITION variable=output complete dim=2
-#pragma HLS ARRAY_PARTITION variable=out_temp complete dim=1
+#pragma HLS ARRAY_PARTITION variable=input dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=output dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
 
 	// dilated conv
 	LOOP_DILATED_CONV:
@@ -847,9 +850,9 @@ void conv_1x1_grad
 			}
 			// write out
 			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 #pragma HLS UNROLL
 #pragma HLS LATENCY MAX = 1
+				for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
 					output[co][ci] = out_temp[co];
 				}
 			}
@@ -866,28 +869,35 @@ void SGD_WU_3x3
 )
 {
 	int8 weight_temp[3][3];
-#pragma HLS ARRAY_PARTITION variable=gradient complete dim=1
-#pragma HLS ARRAY_PARTITION variable=gradient complete dim=2
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=2
-#pragma HLS ARRAY_PARTITION variable=weight_temp complete dim=1
-#pragma HLS ARRAY_PARTITION variable=weight_temp complete dim=2
+#pragma HLS ARRAY_PARTITION variable=gradient dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=gradient dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=weight_temp dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=weight_temp dim=2 complete
+
+#pragma HLS ARRAY_PARTITION variable=weight_temp type=dim=2 complete
 
 	LOOP_TILE:
 	for (int co = 0; co < CHANNEL_OUT_T; co++) {
-		for (int ci = 0; ci < CHANNEL_IN_T; ci++) {
 #pragma HLS PIPELINE
+		LOOP_WEIGHT_UPDATE:
+		for (int ci = 0; ci < CHANNEL_IN_T; ci++) {
 #pragma HLS UNROLL
-			LOOP_WEIGHT_UPDATE:
 			for (int krow = 0; krow < 3; krow++) {
+#pragma HLS UNROLL
 				for (int kcol = 0; kcol < 3; kcol++) {
 #pragma HLS UNROLL
 #pragma HLS LATENCY MAX = 1
 					weight_temp[krow][kcol] = weight[co][ci][krow][kcol] - lr*gradient[co][ci][krow][kcol];
 				}
 			}
-			LOOP_WRITE_OUTPUT:
+		}
+		LOOP_WRITE_OUTPUT:
+		for (int ci = 0; ci < CHANNEL_IN_T; ci++) {
+#pragma HLS UNROLL
 			for (int krow = 0; krow < 3; krow++) {
+#pragma HLS UNROLL
 				for (int kcol = 0; kcol < 3; kcol++) {
 #pragma HLS UNROLL
 #pragma HLS LATENCY MAX = 1
@@ -907,10 +917,10 @@ void SGD_WU_1x1
 )
 {
 	int8 weight_temp;
-#pragma HLS ARRAY_PARTITION variable=gradient complete dim=1
-#pragma HLS ARRAY_PARTITION variable=gradient complete dim=2
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=1
-#pragma HLS ARRAY_PARTITION variable=weight complete dim=2
+#pragma HLS ARRAY_PARTITION variable=gradient dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=gradient dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=weight dim=2 complete
 
 	LOOP_TILE:
 	for (int co = 0; co < CHANNEL_OUT_T; co++) {
