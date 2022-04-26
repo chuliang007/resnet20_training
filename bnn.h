@@ -14,10 +14,10 @@ void FracNet_T(
 
 void FracNet_T(
 	int8 image[BATCH_SIZE][3][32][32],
-	int8 output[BATCH_SIZE][10],
+	int8 output[BATCH_SIZE][10]
 
-	int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH],				// BN output activation
-	int8 out_buf_t1[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH]				// Conv output activation
+	//int8 out_buf_t0[NUM_ACT][BATCH_SIZE][16][33][33],
+	//int8 out_buf_t1[NUM_ACT][BATCH_SIZE][16][33][33]
 );
 
 #endif

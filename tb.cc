@@ -7,7 +7,7 @@
 #include <hls_math.h>
 
 using namespace std;
-
+/*
 #define NUM_TESTS 3
 // #define LAYER_TEST
 
@@ -42,7 +42,7 @@ void get_image(unsigned char *images, unsigned int idx, float image[96][32][32])
 		}
 	}
 }
-
+*/
 
 int main(int argc, char **argv)
 {
@@ -55,23 +55,53 @@ int main(int argc, char **argv)
 
 		int8 image_hw[BATCH_SIZE][3][32][32] = {1};
 		int8 accelerator_output[BATCH_SIZE][10];
-		int8 conv_3x3_weight_tile_buffer[40][16][16][3][3] = {1};
-		int8 conv_1x1_weight_tile_buffer[3][16][16] = {1};
 
-		int8 out_buf_t0[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];			// BN output activation
-		int8 out_buf_t1[NUM_ACT][BATCH_SIZE][CHANNEL_OUT_T][WIDTH][WIDTH];
+		int8 conv_3x3_weight_tile_buffer[NUM_3x3_WT][16][16][3][3] = {1};
+		int8 conv_1x1_weight_tile_buffer[NUM_1x1_WT][16][16] = {1};
+
+		// int8 out_buf_t0[NUM_ACT][BATCH_SIZE][16][33][33];
+		// int8 out_buf_t1[NUM_ACT][BATCH_SIZE][16][33][33];
+
+		int8 *****out_buf_t0;
+		out_buf_t0 = (int8 *****)malloc(sizeof(int8 ****) * NUM_ACT);
+		for (int i = 0; i<NUM_ACT; i ++) {
+			out_buf_t0[i] = (int8 ****)malloc(sizeof(int8 ***) * BATCH_SIZE);
+			for (int j = 0; j<BATCH_SIZE; j ++) {
+				out_buf_t0[i][j] = (int8 ***)malloc(sizeof(int8 **) * 16);
+				for (int k = 0; k<16; k++) {
+					out_buf_t0[i][j][k] = (int8 **)malloc(sizeof(int8 *) * 33);
+					for (int m = 0; m<33; m ++) {
+						out_buf_t0[i][j][k][m] = (int8 *)malloc(sizeof(int8) * 33);
+					}
+				}
+			}
+		}
+
+		int8 *****out_buf_t1;
+		out_buf_t1 = (int8 *****)malloc(sizeof(int8 ****) * NUM_ACT);
+		for (int i = 0; i<NUM_ACT; i ++) {
+			out_buf_t1[i] = (int8 ****)malloc(sizeof(int8 ***) * BATCH_SIZE);
+			for (int j = 0; j<BATCH_SIZE; j ++) {
+				out_buf_t1[i][j] = (int8 ***)malloc(sizeof(int8 **) * 16);
+				for (int k = 0; k<16; k++) {
+					out_buf_t1[i][j][k] = (int8 **)malloc(sizeof(int8 *) * 33);
+					for (int m = 0; m<33; m ++) {
+						out_buf_t1[i][j][k][m] = (int8 *)malloc(sizeof(int8) * 33);
+					}
+				}
+			}
+		}
 
 		FracNet_T(image_hw, accelerator_output, out_buf_t0, out_buf_t1);
 
 		cout << endl << "accelerator output: "<< endl;
 
 		for (int i = 0; i < 3; i ++){
-			cout << accelerator_output[0][i];
+			// cout << accelerator_output[0][i];
 			cout << endl << "FracNet_T out: " << accelerator_output[0][i] << endl;
-			cout << "\n" << endl;
+			// cout << "\n" << endl;
 		}
 		cout << endl;
-
 
 	return 0;
 	}

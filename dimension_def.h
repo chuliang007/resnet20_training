@@ -5,7 +5,7 @@ used in the accelerator.
 
 ///*
 #define lr 0.01
-#define BATCH_SIZE 1
+#define BATCH_SIZE 4
 
 #define NUM_3x3_WT 44
 #define NUM_1x1_WT 7
