@@ -1,6 +1,6 @@
 # resnet18_training
 
-1. 'resnet18.cc' defines an FPGA-based ResNet18 training accelerator for CIFAR10.
+1. 'resnet20.cc' defines an FPGA-based ResNet18 training accelerator for CIFAR10.
 2. Layer functions used in the accelerator are defined in 'layer.h'.
 3. Python codes for PyTorch simulations are included in 'BP_function.py' in the directory of 'PyTorch_BP'.
 
