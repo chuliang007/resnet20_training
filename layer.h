@@ -225,6 +225,13 @@ void bn(
 				mu[c] += in_temp[c]/N;
 				sigma[c] += (in_temp[c]-mu[c])/hls::sqrt(N);
 			}
+		}
+	}
+	for (int row = 0; row < H_fmap; row ++) {
+#pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+		for (int col = 0; col < H_fmap; col ++) {
+#pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+#pragma HLS PIPELINE II=1
 			// bn
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				//out_temp[c] = gamma[c]*(in_temp[c]-mu[c])/sigma[c] + beta[c];
@@ -291,6 +298,13 @@ void bn_bp(
 				//g_gamma[c] += error_temp[c] * (in_temp[c]-mu[c])/sigma[c];
 				g_gamma[c] = error_temp[c] * (in_temp[c]-mu[c]);
 			}
+		}
+	}
+	for (int row = 0; row < H_fmap; row ++) {
+#pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+		for (int col = 0; col < H_fmap; col ++) {
+#pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+#pragma HLS PIPELINE II=1
 			// calc backprop error
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				//out_temp[c] = gamma[c]*error_temp[c]/sigma[c] - gamma[c]*g_beta[c]/(N*sigma[c]) - (in_temp[c]-mu[c])*g_gamma[c]/(N*gamma[c]*sigma[c]*sigma[c]);
@@ -340,7 +354,7 @@ void bn_relu(
 #pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
 		for (int col = 0; col < H_fmap; col ++) {
 #pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
-#pragma HLS PIPELINE II=1	// ii violation otherwise!
+#pragma HLS PIPELINE II=1
 			// buffer init
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				in_temp[c] = bn_inputs[c][row][col];
@@ -350,6 +364,13 @@ void bn_relu(
 				mu[c] += in_temp[c]/N;
 				sigma[c] += (in_temp[c]-mu[c])/hls::sqrt(N);
 			}
+		}
+	}
+	for (int row = 0; row < H_fmap; row ++) {
+#pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+		for (int col = 0; col < H_fmap; col ++) {
+#pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+#pragma HLS PIPELINE II=1
 			// bn + relu
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				//out_temp[c] = gamma[c]*(in_temp[c]-mu[c])/sigma[c] + beta[c];
@@ -421,6 +442,13 @@ void bn_relu_bp(
 				g_beta[c] += error_temp[c];
 				g_gamma[c] += error_temp[c] * (bn_inputs_fw[c][row][col]-mu[c]);
 			}
+		}
+	}
+	for (int row = 0; row < H_fmap; row ++) {
+#pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+		for (int col = 0; col < H_fmap; col ++) {
+#pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+#pragma HLS PIPELINE II=1
 			// calc backprop error
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				//out_temp[c] = gamma[c]*error_temp[c]/sigma[c] - gamma[c]*g_beta[c]/(N*sigma[c]) - (in_temp[c]-mu[c])*g_gamma[c]/(N*gamma[c]*sigma[c]*sigma[c]);
@@ -433,6 +461,7 @@ void bn_relu_bp(
 		}
 	}
 }
+
 /*
 // ============
 // Conv forward
