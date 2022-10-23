@@ -430,11 +430,11 @@ void shortcut(
 	int8 input_b[CHANNEL_OUT_T][WIDTH][WIDTH],			// in2
 	int8 out_buf[CHANNEL_OUT_T][WIDTH][WIDTH],			// out
 	int8 out_buf_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, off-chip
-	int8 out_buf_SC[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, ideneity for shortcut
+//	int8 out_buf_SC[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, ideneity for shortcut
 
 	int H_fmap_in,
 	uint1 ctrl_sc,	// if ctrl_sc=0, generate and send out_copy into DDR
-	uint1 ctrl_sc_id,
+//	uint1 ctrl_sc_id,
 
 //	int8 shared_exp_bias[CHANNEL_OUT_T],
 	int8 bias_gap4add[CHANNEL_OUT_T]
@@ -458,7 +458,6 @@ void shortcut(
 #pragma HLS ARRAY_PARTITION variable=input_b dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=out_buf dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=out_buf_DDR dim=1 complete
-#pragma HLS ARRAY_PARTITION variable=out_buf_SC dim=1 complete
 
 	for (int row = 0; row < H_fmap_in; row ++) {
 // #pragma HLS LOOP_TRIPCOUNT min = 8 max = 32
@@ -477,14 +476,14 @@ void shortcut(
 			}
 			if (ctrl_sc == 0) {
 				for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-					out_buf_SC[c][row][col] = out_temp[c];
-				}
-			}
-			if (ctrl_sc_id == 0) {
-				for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 					out_buf_DDR[c][row][col] = out_temp[c];
 				}
 			}
+//			if (ctrl_sc_id == 0) {
+//				for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+//					out_buf_SC[c][row][col] = out_temp[c];
+//				}
+//			}
 		}
 	}
  	// update shared exponent bias
@@ -663,7 +662,7 @@ void bn_relu(
 
 	int8 out_buf_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, off-chip for backprop
 	uint1 relu_mask[CHANNEL_OUT_T][WIDTH][WIDTH],		// out, relu_mask for relu_bp
-	int8 out_buf_SC[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, ideneity for shortcut
+//	int8 out_buf_SC[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, ideneity for shortcut
 
 	int8 bn_wt[CHANNEL_OUT_T],
 	int8 bn_bias[CHANNEL_OUT_T],
@@ -671,7 +670,7 @@ void bn_relu(
 	int8 std_var[CHANNEL_OUT_T],
 
     int H_fmap,
-	uint1 ctrl_bn_id,
+//	uint1 ctrl_bn_id,
 
 //	int8 shared_exp_bias[CHANNEL_OUT_T],
 	int8 bias_gap4add[CHANNEL_OUT_T]
@@ -700,7 +699,6 @@ void bn_relu(
 #pragma HLS ARRAY_PARTITION variable=bn_inputs dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=out_buf dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=out_buf_DDR dim=1 complete
-#pragma HLS ARRAY_PARTITION variable=out_buf_SC dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=relu_mask dim=1 complete
 
 	for (int row = 0; row < H_fmap; row ++) {
@@ -725,11 +723,11 @@ void bn_relu(
 				out_buf_DDR[c][row][col] = (relu_temp[c]==0) ? int8(0) : out_temp[c];
 //				if (out_temp[c].range(1,0) > max_abs[c].range(1,0)) max_abs[c] = out_temp[c];
 			}
-			if (ctrl_bn_id == 0) {
-				for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-					out_buf_SC[c][row][col] = (relu_temp[c]==0) ? int8(0) : out_temp[c];
-				}
-			}
+//			if (ctrl_bn_id == 0) {
+//				for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+//					out_buf_SC[c][row][col] = (relu_temp[c]==0) ? int8(0) : out_temp[c];
+//				}
+//			}
 		}
 	}
 // 	// update shared exponent bias
