@@ -5,8 +5,8 @@ The blind link describes an HLS-based CNN training accelerator using the back-pr
 <!-- ![resnet20](https://github.com/chuliang007/resnet20_cifar-training/blob/main/resnet20/resnet_hw.png)
 ![vgg-like](https://github.com/chuliang007/resnet20_cifar-training/blob/main/vgg-like/vgg_hw.png) -->
 
-<img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/resnet20/resnet_hw.png" width="1000px"/><br/>
-<img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/vgg-like/vgg_hw.png" width="1000px"/><br/>
+<img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/resnet20/resnet_hw.png" width="200px"/><br/>
+<img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/vgg-like/vgg_hw.png" width="200px"/><br/>
 
 ## Structure  
 
