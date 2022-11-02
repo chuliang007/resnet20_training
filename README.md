@@ -1,6 +1,6 @@
 # CNN training using block minifloat
 
-The blind link decsribes an HLS-based CNN training accelerator using the backpropagation with the SGD optimiser. 
+The blind link describes an HLS-based CNN training accelerator using the back-propagation algorithm with the SGD optimiser. 
 
 ## Structure  
 
