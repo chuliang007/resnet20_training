@@ -2,11 +2,11 @@
 
 The blind link describes an HLS-based CNN training accelerator using the back-propagation algorithm with the SGD optimiser. The current open-source code is in floating-point format to give a quick functional verification of the training accelerator design. A full version using the block minifloat will be released afterwards.
 
-![resnet20](https://github.com/chuliang007/resnet20_cifar-training/blob/main/resnet20/resnet_hw.png)
-![vgg-like](https://github.com/chuliang007/resnet20_cifar-training/blob/main/vgg-like/vgg_hw.png)
+<!-- ![resnet20](https://github.com/chuliang007/resnet20_cifar-training/blob/main/resnet20/resnet_hw.png)
+![vgg-like](https://github.com/chuliang007/resnet20_cifar-training/blob/main/vgg-like/vgg_hw.png) -->
 
-<img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/resnet20/resnet_hw.png" width="50" height="50"/><br/>
-<img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/vgg-like/vgg_hw.png" width="50" height="50"/><br/>
+<img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/resnet20/resnet_hw.png" width="50px" height="50px"/><br/>
+<img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/vgg-like/vgg_hw.png" width="50px" height="50px"/><br/>
 
 ## Structure  
 
