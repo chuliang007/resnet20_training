@@ -11,13 +11,13 @@
 
 >> design source files    
 >>> ```bnn.h``` <br>
->>> ```conv_weights.h``` <br>      
->>> ```dimension_def.h``` <br>    
+>>> ```conv_weights.h``` <br>
+>>> ```dimension_def.h``` <br> 
 >>> ```layer.h``` <br>
->>> ```resnet20.cc``` <br>  
->>> ```typedefs.h``` <br>  
+>>> ```resnet20.cc``` <br>
+>>> ```typedefs.h``` <br>
 
 >> testbench files
->>> ```conv_weights_tb.h``` <br>  
->>> ```tb.cc``` <br>  
->>> ```weights_tb.h``` <br>  
+>>> ```conv_weights_tb.h``` <br>
+>>> ```tb.cc``` <br>
+>>> ```weights_tb.h``` <br>
