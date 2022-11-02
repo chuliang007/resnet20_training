@@ -21,7 +21,7 @@ The blind link describes an HLS-based CNN training accelerator using the back-pr
 >> ```conv_weights.h``` <br>
 >> ```dimension_def.h``` <br> 
 >> ```layer.h``` <br>
->> ```resnet20.cc``` <br>
+>> ```resnet20.cc``` or ```vgg-like.cc``` <br>
 >> ```typedefs.h``` <br>
 
 > testbench files
