@@ -10,14 +10,14 @@
 > resnet20 and vgg-like- HLS design of the accelerator with both input and output channel tiling.
 
 >> design source files    
->>> ```c bnn.h ```
->>> conv_weights.h   
->>> dimension_def.h   
->>> layer.h   
->>> resnet20.cc  
->>> typedefs.h  
+>>> ```bnn.h``` <br>
+>>> ```conv_weights.h``` <br>      
+>>> ```dimension_def.h``` <br>    
+>>> ```layer.h``` <br>
+>>> ```resnet20.cc``` <br>  
+>>> ```typedefs.h``` <br>  
 
 >> testbench files
->>> conv_weights_tb.h  
->>> tb.cc  
->>> weights_tb.h  
+>>> ```conv_weights_tb.h``` <br>  
+>>> ```tb.cc``` <br>  
+>>> ```weights_tb.h``` <br>  
