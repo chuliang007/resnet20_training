@@ -20,7 +20,7 @@ used in the accelerator.
 ///*
 #define CHANNEL_IN_T 8
 #define CHANNEL_OUT_T 8
-#define WIDTH 32
+#define WIDTH 33
 
 #define NUM_3x3_WT 87
 #define NUM_1x1_WT 13

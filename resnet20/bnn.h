@@ -6,6 +6,7 @@
 
 void FracNet_T(
 	float image[3][32][32],
+	float ctrl_tl,
 	float &loss,
 	float error[10]
 );

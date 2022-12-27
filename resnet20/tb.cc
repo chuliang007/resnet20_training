@@ -10,9 +10,15 @@
 #include <hls_math.h>
 
 using namespace std;
+
+#define EPOCH 90
+unsigned char images[EPOCH*3*32*32];
+unsigned char labels[EPOCH];
+
 //const uint2 exp_bias = 2;	// ieee-754 shared_exp_bias
-float lr_sw = 1e-2;
+float lr_sw = 0.005; //1e-2;
 float eps_sw = 1e-10;
+float mom_sw = 0.9;
 
 #define CHANNEL_IN_T 8
 #define CHANNEL_OUT_T 8
@@ -565,7 +571,8 @@ void conv_3x3_grad_sw
 (
 	float weight[out_channels_hw][H_fmap_out_hw/stride_hw][H_fmap_out_hw/stride_hw],
 	float input[in_channels_hw][H_fmap_out_hw][H_fmap_out_hw],		// in on-chip
-	float output[out_channels_hw][in_channels_hw][3][3]			// out on-chip
+	float output[out_channels_hw][in_channels_hw][3][3],			// out on-chip
+	float vel[out_channels_hw][in_channels_hw][3][3]
 )
 {
 	float accum;
@@ -607,9 +614,9 @@ void conv_3x3_grad_sw
 							}
 						}
 					}
-					output[co][ci][row][col] += -lr_sw * accum;
-//					if (accum != 0) printf("weight grad [%d][%d][%d][%d]: %f \n", co, ci, row, col, accum);
-					// if (accum != 0) printf("updated weight [%d][%d][%d][%d]: %f \n", co, ci, row, col, output[co][ci][row][col]);
+//					output[co][ci][row][col] += -lr_sw * accum;
+					vel[co][ci][row][col] = vel[co][ci][row][col]*mom_sw + lr_sw*accum;
+					output[co][ci][row][col] -= vel[co][ci][row][col];
 				}
 			}
 		}
@@ -621,7 +628,8 @@ void conv_1x1_grad_sw
 (
 	float weight[out_channels_hw][H_fmap_out_hw/stride_hw][H_fmap_out_hw/stride_hw],
 	float input[in_channels_hw][H_fmap_out_hw][H_fmap_out_hw],		// in on-chip
-	float output[out_channels_hw][in_channels_hw]					// out on-chip
+	float output[out_channels_hw][in_channels_hw],					// out on-chip
+	float vel[out_channels_hw][in_channels_hw]
 )
 {
 	float accum;
@@ -661,9 +669,9 @@ void conv_1x1_grad_sw
 					}
 				}
 			}
-			output[co][ci] += -lr_sw * accum;
-			// if (accum != 0) printf("weight grad [%d][%d]: %f \n", co, ci, accum);
-			// if (accum != 0) printf("updated weight [%d][%d]: %f \n", co, ci, output[co][ci]);
+//			output[co][ci] += -lr_sw * accum;
+		    vel[co][ci] = vel[co][ci]*mom_sw + lr_sw*accum;
+		    output[co][ci] -= vel[co][ci];
 		}
 	}
 }
@@ -784,20 +792,22 @@ void bn_relu_sw(
 // bn_bp_sw
 template <int in_channels_hw, int H_fmap_in_hw>
 void bn_bp_sw(
-	float error_sw[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw], 		// in
+	float error_sw[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw], 	// in
 	float bn_inputs_fw[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],	// in
 	float out_buf[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],		// out, error_bn
 
-	float bn_wt_hw[in_channels_hw],								// in
-	float bn_bias_hw[in_channels_hw]								// in
+	float bn_wt_hw[in_channels_hw],									// in
+	float bn_bias_hw[in_channels_hw],								// in
+	float vel_wt[in_channels_hw],
+	float vel_bias[in_channels_hw]
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
 	float mu[in_channels_hw];
 	float std_var[in_channels_hw];
 	float sum_sw[in_channels_hw] = {0};
-	float g_bn_wt[in_channels_hw] = {0};						// out
-	float g_bn_bias[in_channels_hw] = {0};						// out
+	float g_bn_wt_hw[in_channels_hw] = {0};							// out
+	float g_bn_bias_hw[in_channels_hw] = {0};						// out
 
 	// mean
 	for (int row = 0; row < H_fmap_in_hw; row ++) {
@@ -831,8 +841,8 @@ void bn_bp_sw(
 	for (int row = 0; row < H_fmap_in_hw; row ++) {
 		for (int col = 0; col < H_fmap_in_hw; col ++) {
 			for (int c = 0; c < in_channels_hw; c ++) {
-				g_bn_bias[c] += error_sw[c][row][col];
-				g_bn_wt[c] += error_sw[c][row][col] * (bn_inputs_fw[c][row][col]-mu[c])/(std_var[c]+eps_sw);
+				g_bn_bias_hw[c] += error_sw[c][row][col];
+				g_bn_wt_hw[c] += error_sw[c][row][col] * (bn_inputs_fw[c][row][col]-mu[c])/(std_var[c]+eps_sw);
 			}
 		}
 	}
@@ -841,7 +851,7 @@ void bn_bp_sw(
 	for (int row = 0; row < H_fmap_in_hw; row ++) {
 		for (int col = 0; col < H_fmap_in_hw; col ++) {
 			for (int c = 0; c < in_channels_hw; c ++) {
-				out_buf[c][row][col] = bn_wt_hw[c]*error_sw[c][row][col]/(std_var[c]+eps_sw) - bn_wt_hw[c]*g_bn_bias[c]/(N*(std_var[c]+eps_sw)) - bn_wt_hw[c]*(bn_inputs_fw[c][row][col]-mu[c])*g_bn_wt[c]/(N*(std_var[c]*std_var[c]+eps_sw));
+				out_buf[c][row][col] = bn_wt_hw[c]*error_sw[c][row][col]/(std_var[c]+eps_sw) - bn_wt_hw[c]*g_bn_bias_hw[c]/(N*(std_var[c]+eps_sw)) - bn_wt_hw[c]*(bn_inputs_fw[c][row][col]-mu[c])*g_bn_wt_hw[c]/(N*(std_var[c]*std_var[c]+eps_sw));
 			}
 		}
 	}
@@ -850,8 +860,12 @@ void bn_bp_sw(
 	for (int row = 0; row < H_fmap_in_hw; row ++) {
 		for (int col = 0; col < H_fmap_in_hw; col ++) {
 			for (int c = 0; c < in_channels_hw; c ++) {
-				bn_bias_hw[c] += -lr_sw * g_bn_bias[c];
-				bn_wt_hw[c] += -lr_sw * g_bn_wt[c];
+//				bn_bias_hw[c] += -lr_sw * g_bn_bias_hw[c];
+//				bn_wt_hw[c] += -lr_sw * g_bn_wt_hw[c];
+				vel_wt[c] = vel_wt[c]*mom_sw + lr_sw * g_bn_wt_hw[c];
+				bn_wt_hw[c] -= vel_wt[c];
+				vel_bias[c] = vel_bias[c]*mom_sw + lr_sw * g_bn_bias_hw[c];
+				bn_bias_hw[c] -= vel_bias[c];
 			}
 		}
 	}
@@ -860,21 +874,23 @@ void bn_bp_sw(
 // bn_relu_bp_sw
 template <int in_channels_hw, int H_fmap_in_hw>
 void bn_relu_bp_sw(
-	float error_sw[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw], 		// in
+	float error_sw[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw], 	// in
 	float bn_inputs_fw[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],	// in
 	float out_buf[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],		// out, error_bn
-	uint1 relu_mask_hw[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],		// in
+	uint1 relu_mask_hw[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],	// in
 
-	float bn_wt_hw[in_channels_hw],								// in
-	float bn_bias_hw[in_channels_hw]								// in
+	float bn_wt_hw[in_channels_hw],									// in
+	float bn_bias_hw[in_channels_hw],								// in
+	float vel_wt[in_channels_hw],
+	float vel_bias[in_channels_hw]
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
 	float mu[in_channels_hw];
 	float std_var[in_channels_hw];
 	float sum_sw[in_channels_hw] = {0};
-	float g_bn_wt[in_channels_hw] = {0};						// out
-	float g_bn_bias[in_channels_hw] = {0};						// out
+	float g_bn_wt_hw[in_channels_hw] = {0};							// out
+	float g_bn_bias_hw[in_channels_hw] = {0};						// out
 
 	// relu_bp
 	for (int row = 0; row < H_fmap_in_hw; row ++) {
@@ -917,18 +933,18 @@ void bn_relu_bp_sw(
 	for (int c = 0; c < in_channels_hw; c ++) {
 		for (int row = 0; row < H_fmap_in_hw; row ++) {
 			for (int col = 0; col < H_fmap_in_hw; col ++) {
-				g_bn_bias[c] += error_sw[c][row][col];
-				g_bn_wt[c] += error_sw[c][row][col] * (bn_inputs_fw[c][row][col]-mu[c])/(std_var[c]+eps_sw);
+				g_bn_bias_hw[c] += error_sw[c][row][col];
+				g_bn_wt_hw[c] += error_sw[c][row][col] * (bn_inputs_fw[c][row][col]-mu[c])/(std_var[c]+eps_sw);
 			}
 		}
-//		printf("g_bn_wt[%d] = %f, g_bn_bias[%d] = %f \n", c, g_bn_wt[c], c, g_bn_bias[c]);
+//		printf("g_bn_wt_hw[%d] = %f, g_bn_bias_hw[%d] = %f \n", c, g_bn_wt_hw[c], c, g_bn_bias_hw[c]);
 	}
 
 	// generic_bn_bp_hw
 	for (int row = 0; row < H_fmap_in_hw; row ++) {
 		for (int col = 0; col < H_fmap_in_hw; col ++) {
 			for (int c = 0; c < in_channels_hw; c ++) {
-				out_buf[c][row][col] = bn_wt_hw[c]*error_sw[c][row][col]/(std_var[c]+eps_sw) - bn_wt_hw[c]*g_bn_bias[c]/(N*(std_var[c]+eps_sw)) - bn_wt_hw[c]*(bn_inputs_fw[c][row][col]-mu[c])*g_bn_wt[c]/(N*(std_var[c]*std_var[c]+eps_sw));
+				out_buf[c][row][col] = bn_wt_hw[c]*error_sw[c][row][col]/(std_var[c]+eps_sw) - bn_wt_hw[c]*g_bn_bias_hw[c]/(N*(std_var[c]+eps_sw)) - bn_wt_hw[c]*(bn_inputs_fw[c][row][col]-mu[c])*g_bn_wt_hw[c]/(N*(std_var[c]*std_var[c]+eps_sw));
 			}
 		}
 	}
@@ -937,8 +953,12 @@ void bn_relu_bp_sw(
 	for (int c = 0; c < in_channels_hw; c ++) {
 		for (int row = 0; row < H_fmap_in_hw; row ++) {
 			for (int col = 0; col < H_fmap_in_hw; col ++) {
-				bn_bias_hw[c] += -lr_sw * g_bn_bias[c];
-				bn_wt_hw[c] += -lr_sw * g_bn_wt[c];
+//				bn_bias_hw[c] += -lr_sw * g_bn_bias_hw[c];
+//				bn_wt_hw[c] += -lr_sw * g_bn_wt_hw[c];
+				vel_wt[c] = vel_wt[c]*mom_sw + lr_sw * g_bn_wt_hw[c];
+				bn_wt_hw[c] -= vel_wt[c];
+				vel_bias[c] = vel_bias[c]*mom_sw + lr_sw * g_bn_bias_hw[c];
+				bn_bias_hw[c] -= vel_bias[c];
 			}
 		}
 //		printf("bn_wt_hw[%d] = %f, bn_bias_hw[%d] = %f \n", c, bn_wt_hw[c], c, bn_bias_hw[c]);
@@ -985,18 +1005,19 @@ void FC_sw(
 	float inputs[64],
 	float inputs_fw[64],
 	float linear_weight[10][64],
+	float linear_bias[10],
 	float outputs[10],
 
 	uint1 ctrl_fc_hw	// 0 for forward and 1 for backward
 )
 {
-	float linear_weight_t[64][10];
+//	float linear_weight_t[64][10];
 
 	// forward
 	if (ctrl_fc_hw == 0) {
 		// buffer init
 		for (int coo = 0; coo < 10; coo ++) {
-			outputs[coo] = 0;
+			outputs[coo] = linear_bias[coo];
 		}
 		for (int coo = 0; coo < 10; coo ++) {
 			for (int cii = 0; cii < 64; cii++) {
@@ -1021,6 +1042,10 @@ void FC_sw(
 			for (int coo = 0; coo < 10; coo ++) {
 				linear_weight[coo][cii] += -lr_sw * inputs_fw[cii] * outputs[coo];
 			}
+		}
+		// bias update
+		for (int coo = 0; coo < 10; coo ++) {
+			linear_bias[coo] += -lr_sw * outputs[coo];
 		}
 	}
 }
@@ -1549,6 +1574,7 @@ void generic_FC_hw(
 	float inputs[64],
 	float inputs_FW[64],
 	float linear_weight[10][64],
+	float linear_bias[10],
 	float outputs[10],
 
 	uint1 ctrl_fc_hw	// 0 for forward and 1 for backward
@@ -1560,7 +1586,7 @@ void generic_FC_hw(
 	if (ctrl_fc_hw == 0) {
 		// buffer init
 		for (int coo = 0; coo < 10; coo ++) {
-			outputs[coo] = 0;
+			outputs[coo] = linear_bias[coo];
 		}
 		for (int coo = 0; coo < 10; coo ++) {
 			for (int cii = 0; cii < 64; cii++) {
@@ -1586,6 +1612,9 @@ void generic_FC_hw(
 			for (int coo = 0; coo < 10; coo ++) {
 				linear_weight[coo][cii] += -lr_sw * inputs_FW[cii] * outputs[coo];
 			}
+		}
+		for (int coo = 0; coo < 10; coo ++) {
+			linear_bias[coo] += -lr_sw * outputs[coo];
 		}
 	}
 }
@@ -1758,7 +1787,7 @@ void generic_bn_bp_hw(
 	// bn_sw params update
 	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 		bn_bias_hw[c] += -lr_sw * g_bn_bias[c];
-		g_bn_wt[c] += -lr_sw * g_bn_wt[c];
+		bn_wt_hw[c] += -lr_sw * g_bn_wt[c];
 	}
 }
 
@@ -2064,7 +2093,7 @@ void FracNet_sw(float image_sw[3][32][32]) {
 	//////////// avgpool & FC //////////
 
 	avgpool_sw(layer3_2_sc_out, avg_pool_out_sw, 0);
-	FC_sw(avg_pool_out_sw, avg_pool_out_sw, linear_weight_sw, linear_out_buf_sw, 0);
+	FC_sw(avg_pool_out_sw, avg_pool_out_sw, linear_weight_sw, linear_bias_sw, linear_out_buf_sw, 0);
 
 	////////////////////////////////////
 	//////////// CrossEntropy loss /////
@@ -2117,52 +2146,52 @@ void FracNet_sw(float image_sw[3][32][32]) {
 	////////////////////////////////////
 	//////////// avgpool & FC //////////
 
-	FC_sw(fc_bp_out, avg_pool_out_sw, linear_weight_sw, error_sw, 1);
+	FC_sw(fc_bp_out, avg_pool_out_sw, linear_weight_sw, linear_bias_sw, error_sw, 1);
 	avgpool_sw(avg_pool_bp_out, fc_bp_out, 1);
 
 	////////////////////////////////////
 	//////////// layer3_2  /////////////
 
-	bn_relu_bp_sw<64, 8>(avg_pool_bp_out, layer3_2_conv2_out, layer3_2_bn_relu2_bp_out, layer3_2_relu2_mask,  layer3_2_bn_relu2_bn_wt, layer3_2_bn_relu2_bn_bias);
+	bn_relu_bp_sw<64, 8>(avg_pool_bp_out, layer3_2_conv2_out, layer3_2_bn_relu2_bp_out, layer3_2_relu2_mask,  layer3_2_bn_relu2_bn_wt, layer3_2_bn_relu2_bn_bias, layer3_2_bn_relu2_bn_wt_vel, layer3_2_bn_relu2_bn_bias_vel);
 	deconv_3x3_sw<64, 64, 8, 8, 1>(layer3_2_bn_relu2_bp_out, layer3_2_conv2_weight_rot, layer3_2_conv2_bp_out);
-	conv_3x3_grad_sw<64, 64, 8, 1>(layer3_2_bn_relu2_bp_out, layer3_2_bn_relu1_out, layer3_2_conv2_weight);
+	conv_3x3_grad_sw<64, 64, 8, 1>(layer3_2_bn_relu2_bp_out, layer3_2_bn_relu1_out, layer3_2_conv2_weight, layer3_2_conv2_weight_vel);
 
-	bn_relu_bp_sw<64, 8>(layer3_2_conv2_bp_out, layer3_2_conv1_out, layer3_2_bn_relu1_bp_out, layer3_2_relu1_mask,  layer3_2_bn_relu1_bn_wt, layer3_2_bn_relu1_bn_bias);
+	bn_relu_bp_sw<64, 8>(layer3_2_conv2_bp_out, layer3_2_conv1_out, layer3_2_bn_relu1_bp_out, layer3_2_relu1_mask,  layer3_2_bn_relu1_bn_wt, layer3_2_bn_relu1_bn_bias, layer3_2_bn_relu1_bn_wt_vel, layer3_2_bn_relu1_bn_bias_vel);
 	deconv_3x3_sw<64, 64, 8, 8, 1>(layer3_2_bn_relu1_bp_out, layer3_2_conv1_weight_rot, layer3_2_conv1_bp_out);
-	conv_3x3_grad_sw<64, 64, 8, 1>(layer3_2_bn_relu1_bp_out, layer3_1_sc_out, layer3_2_conv1_weight);
+	conv_3x3_grad_sw<64, 64, 8, 1>(layer3_2_bn_relu1_bp_out, layer3_1_sc_out, layer3_2_conv1_weight, layer3_2_conv1_weight_vel);
 
 	shortcut_sw<64, 8>(avg_pool_bp_out, layer3_2_conv1_bp_out, layer3_2_sc_bp_out);
 
 	////////////////////////////////////
 	//////////// layer3_1  /////////////
 
-	bn_relu_bp_sw<64, 8>(layer3_2_sc_bp_out, layer3_1_conv2_out, layer3_1_bn_relu2_bp_out, layer3_1_relu2_mask,  layer3_1_bn_relu2_bn_wt, layer3_1_bn_relu2_bn_bias);
+	bn_relu_bp_sw<64, 8>(layer3_2_sc_bp_out, layer3_1_conv2_out, layer3_1_bn_relu2_bp_out, layer3_1_relu2_mask,  layer3_1_bn_relu2_bn_wt, layer3_1_bn_relu2_bn_bias, layer3_1_bn_relu2_bn_wt_vel, layer3_1_bn_relu2_bn_bias_vel);
 	deconv_3x3_sw<64, 64, 8, 8, 1>(layer3_1_bn_relu2_bp_out, layer3_1_conv2_weight_rot, layer3_1_conv2_bp_out);
-	conv_3x3_grad_sw<64, 64, 8, 1>(layer3_1_bn_relu2_bp_out, layer3_1_bn_relu1_out, layer3_1_conv2_weight);
+	conv_3x3_grad_sw<64, 64, 8, 1>(layer3_1_bn_relu2_bp_out, layer3_1_bn_relu1_out, layer3_1_conv2_weight, layer3_1_conv2_weight_vel);
 
-	bn_relu_bp_sw<64, 8>(layer3_1_conv2_bp_out, layer3_1_conv1_out, layer3_1_bn_relu1_bp_out, layer3_1_relu1_mask,  layer3_1_bn_relu1_bn_wt, layer3_1_bn_relu1_bn_bias);
+	bn_relu_bp_sw<64, 8>(layer3_1_conv2_bp_out, layer3_1_conv1_out, layer3_1_bn_relu1_bp_out, layer3_1_relu1_mask,  layer3_1_bn_relu1_bn_wt, layer3_1_bn_relu1_bn_bias, layer3_1_bn_relu1_bn_wt_vel, layer3_1_bn_relu1_bn_bias_vel);
 	deconv_3x3_sw<64, 64, 8, 8, 1>(layer3_1_bn_relu1_bp_out, layer3_1_conv1_weight_rot, layer3_1_conv1_bp_out);
-	conv_3x3_grad_sw<64, 64, 8, 1>(layer3_1_bn_relu1_bp_out, layer3_0_sc_out, layer3_1_conv1_weight);
+	conv_3x3_grad_sw<64, 64, 8, 1>(layer3_1_bn_relu1_bp_out, layer3_0_sc_out, layer3_1_conv1_weight, layer3_1_conv1_weight_vel);
 
 	shortcut_sw<64, 8>(layer3_2_sc_bp_out, layer3_1_conv1_bp_out, layer3_1_sc_bp_out);
 
 	////////////////////////////////////
 	//////////// layer3_0  /////////////
 
-	bn_relu_bp_sw<64, 8>(layer3_1_sc_bp_out, layer3_0_conv2_out, layer3_0_bn_relu2_bp_out, layer3_0_relu2_mask,  layer3_0_bn_relu2_bn_wt, layer3_0_bn_relu2_bn_bias);
+	bn_relu_bp_sw<64, 8>(layer3_1_sc_bp_out, layer3_0_conv2_out, layer3_0_bn_relu2_bp_out, layer3_0_relu2_mask,  layer3_0_bn_relu2_bn_wt, layer3_0_bn_relu2_bn_bias, layer3_0_bn_relu2_bn_wt_vel, layer3_0_bn_relu2_bn_bias_vel);
 	deconv_3x3_sw<64, 64, 8, 8, 1>(layer3_0_bn_relu2_bp_out, layer3_0_conv2_weight_rot, layer3_0_conv2_bp_out);
-	conv_3x3_grad_sw<64, 64, 8, 1>(layer3_0_bn_relu2_bp_out, layer3_0_bn_relu1_out, layer3_0_conv2_weight);
+	conv_3x3_grad_sw<64, 64, 8, 1>(layer3_0_bn_relu2_bp_out, layer3_0_bn_relu1_out, layer3_0_conv2_weight, layer3_0_conv2_weight_vel);
 
-	bn_relu_bp_sw<64, 8>(layer3_0_conv2_bp_out, layer3_0_conv1_out, layer3_0_bn_relu1_bp_out, layer3_0_relu1_mask,  layer3_0_bn_relu1_bn_wt, layer3_0_bn_relu1_bn_bias);
+	bn_relu_bp_sw<64, 8>(layer3_0_conv2_bp_out, layer3_0_conv1_out, layer3_0_bn_relu1_bp_out, layer3_0_relu1_mask,  layer3_0_bn_relu1_bn_wt, layer3_0_bn_relu1_bn_bias, layer3_0_bn_relu1_bn_wt_vel, layer3_0_bn_relu1_bn_bias_vel);
 	deconv_3x3_sw<64, 32, 8, 16, 2>(layer3_0_bn_relu1_bp_out, layer3_0_conv1_weight_rot, layer3_0_conv1_bp_out);
-	conv_3x3_grad_sw<32, 64, 16, 2>(layer3_0_bn_relu1_bp_out, layer2_2_sc_out, layer3_0_conv1_weight);
+	conv_3x3_grad_sw<32, 64, 16, 2>(layer3_0_bn_relu1_bp_out, layer2_2_sc_out, layer3_0_conv1_weight, layer3_0_conv1_weight_vel);
 
 	////////////////////////////////////
 	//////////// layer3_sc  ////////////
 
-	bn_bp_sw<64, 8>(layer3_1_sc_bp_out, layer3_sc_conv_out, layer3_sc_bn_bp_out,  layer3_sc_bn_wt, layer3_sc_bn_bias);
+	bn_bp_sw<64, 8>(layer3_1_sc_bp_out, layer3_sc_conv_out, layer3_sc_bn_bp_out,  layer3_sc_bn_wt, layer3_sc_bn_bias, layer3_sc_bn_wt_vel, layer3_sc_bn_bias_vel);
 	deconv_1x1_sw<64, 32, 8, 16, 2>(layer3_sc_bn_bp_out, layer3_sc_conv_weight_rot, layer3_sc_conv_bp_out);
-	conv_1x1_grad_sw<32, 64, 16, 2>(layer3_sc_bn_bp_out, layer2_2_sc_out, layer3_sc_conv_weight);
+	conv_1x1_grad_sw<32, 64, 16, 2>(layer3_sc_bn_bp_out, layer2_2_sc_out, layer3_sc_conv_weight, layer3_sc_conv_weight_vel);
 
 	shortcut_sw<32, 16>(layer3_sc_conv_bp_out, layer3_0_conv1_bp_out, layer3_0_sc_bp_out);
 
@@ -2171,46 +2200,46 @@ void FracNet_sw(float image_sw[3][32][32]) {
 	////////////////////////////////////
 	//////////// layer2_2  /////////////
 
-	bn_relu_bp_sw<32, 16>(layer3_0_sc_bp_out, layer2_2_conv2_out, layer2_2_bn_relu2_bp_out, layer2_2_relu2_mask,  layer2_2_bn_relu2_bn_wt, layer2_2_bn_relu2_bn_bias);
+	bn_relu_bp_sw<32, 16>(layer3_0_sc_bp_out, layer2_2_conv2_out, layer2_2_bn_relu2_bp_out, layer2_2_relu2_mask,  layer2_2_bn_relu2_bn_wt, layer2_2_bn_relu2_bn_bias, layer2_2_bn_relu2_bn_wt_vel, layer2_2_bn_relu2_bn_bias_vel);
 	deconv_3x3_sw<32, 32, 16, 16, 1>(layer2_2_bn_relu2_bp_out, layer2_2_conv2_weight_rot, layer2_2_conv2_bp_out);	// layer2_2_conv2_bp_out looks wrong
-	conv_3x3_grad_sw<32, 32, 16, 1>(layer2_2_bn_relu2_bp_out, layer2_2_bn_relu1_out, layer2_2_conv2_weight);
+	conv_3x3_grad_sw<32, 32, 16, 1>(layer2_2_bn_relu2_bp_out, layer2_2_bn_relu1_out, layer2_2_conv2_weight, layer2_2_conv2_weight_vel);
 
-	bn_relu_bp_sw<32, 16>(layer2_2_conv2_bp_out, layer2_2_conv1_out, layer2_2_bn_relu1_bp_out, layer2_2_relu1_mask,  layer2_2_bn_relu1_bn_wt, layer2_2_bn_relu1_bn_bias);
+	bn_relu_bp_sw<32, 16>(layer2_2_conv2_bp_out, layer2_2_conv1_out, layer2_2_bn_relu1_bp_out, layer2_2_relu1_mask,  layer2_2_bn_relu1_bn_wt, layer2_2_bn_relu1_bn_bias, layer2_2_bn_relu1_bn_wt_vel, layer2_2_bn_relu1_bn_bias_vel);
 	deconv_3x3_sw<32, 32, 16, 16, 1>(layer2_2_bn_relu1_bp_out, layer2_2_conv1_weight_rot, layer2_2_conv1_bp_out);
-	conv_3x3_grad_sw<32, 32, 16, 1>(layer2_2_bn_relu1_bp_out, layer2_1_sc_out, layer2_2_conv1_weight);
+	conv_3x3_grad_sw<32, 32, 16, 1>(layer2_2_bn_relu1_bp_out, layer2_1_sc_out, layer2_2_conv1_weight, layer2_2_conv1_weight_vel);
 
 	shortcut_sw<32, 16>(layer3_0_sc_bp_out, layer2_2_conv1_bp_out, layer2_2_sc_bp_out);
 
 	////////////////////////////////////
 	//////////// layer2_1  /////////////
 
-	bn_relu_bp_sw<32, 16>(layer2_2_sc_bp_out, layer2_1_conv2_out, layer2_1_bn_relu2_bp_out, layer2_1_relu2_mask,  layer2_1_bn_relu2_bn_wt, layer2_1_bn_relu2_bn_bias);
+	bn_relu_bp_sw<32, 16>(layer2_2_sc_bp_out, layer2_1_conv2_out, layer2_1_bn_relu2_bp_out, layer2_1_relu2_mask,  layer2_1_bn_relu2_bn_wt, layer2_1_bn_relu2_bn_bias, layer2_1_bn_relu2_bn_wt_vel, layer2_1_bn_relu2_bn_bias_vel);
 	deconv_3x3_sw<32, 32, 16, 16, 1>(layer2_1_bn_relu2_bp_out, layer2_1_conv2_weight_rot, layer2_1_conv2_bp_out);
-	conv_3x3_grad_sw<32, 32, 16, 1>(layer2_1_bn_relu2_bp_out, layer2_1_bn_relu1_out, layer2_1_conv2_weight);
+	conv_3x3_grad_sw<32, 32, 16, 1>(layer2_1_bn_relu2_bp_out, layer2_1_bn_relu1_out, layer2_1_conv2_weight, layer2_1_conv2_weight_vel);
 
-	bn_relu_bp_sw<32, 16>(layer2_1_conv2_bp_out, layer2_1_conv1_out, layer2_1_bn_relu1_bp_out, layer2_1_relu1_mask,  layer2_1_bn_relu1_bn_wt, layer2_1_bn_relu1_bn_bias);
+	bn_relu_bp_sw<32, 16>(layer2_1_conv2_bp_out, layer2_1_conv1_out, layer2_1_bn_relu1_bp_out, layer2_1_relu1_mask,  layer2_1_bn_relu1_bn_wt, layer2_1_bn_relu1_bn_bias, layer2_1_bn_relu1_bn_wt_vel, layer2_1_bn_relu1_bn_bias_vel);
 	deconv_3x3_sw<32, 32, 16, 16, 1>(layer2_1_bn_relu1_bp_out, layer2_1_conv1_weight_rot, layer2_1_conv1_bp_out);
-	conv_3x3_grad_sw<32, 32, 16, 1>(layer2_1_bn_relu1_bp_out, layer2_0_sc_out, layer2_1_conv1_weight);
+	conv_3x3_grad_sw<32, 32, 16, 1>(layer2_1_bn_relu1_bp_out, layer2_0_sc_out, layer2_1_conv1_weight, layer2_1_conv1_weight_vel);
 
 	shortcut_sw<32, 16>(layer2_2_sc_bp_out, layer2_1_conv1_bp_out, layer2_1_sc_bp_out);
 
 	////////////////////////////////////
 	//////////// layer2_0  /////////////
 
-	bn_relu_bp_sw<32, 16>(layer2_1_sc_bp_out, layer2_0_conv2_out, layer2_0_bn_relu2_bp_out, layer2_0_relu2_mask,  layer2_0_bn_relu2_bn_wt, layer2_0_bn_relu2_bn_bias);
+	bn_relu_bp_sw<32, 16>(layer2_1_sc_bp_out, layer2_0_conv2_out, layer2_0_bn_relu2_bp_out, layer2_0_relu2_mask,  layer2_0_bn_relu2_bn_wt, layer2_0_bn_relu2_bn_bias, layer2_0_bn_relu2_bn_wt_vel, layer2_0_bn_relu2_bn_bias_vel);
 	deconv_3x3_sw<32, 32, 16, 16, 1>(layer2_0_bn_relu2_bp_out, layer2_0_conv2_weight_rot, layer2_0_conv2_bp_out);
-	conv_3x3_grad_sw<32, 32, 16, 1>(layer2_0_bn_relu2_bp_out, layer2_0_bn_relu1_out, layer2_0_conv2_weight);
+	conv_3x3_grad_sw<32, 32, 16, 1>(layer2_0_bn_relu2_bp_out, layer2_0_bn_relu1_out, layer2_0_conv2_weight, layer2_0_conv2_weight_vel);
 
-	bn_relu_bp_sw<32, 16>(layer2_0_conv2_bp_out, layer2_0_conv1_out, layer2_0_bn_relu1_bp_out, layer2_0_relu1_mask,  layer2_0_bn_relu1_bn_wt, layer2_0_bn_relu1_bn_bias);
+	bn_relu_bp_sw<32, 16>(layer2_0_conv2_bp_out, layer2_0_conv1_out, layer2_0_bn_relu1_bp_out, layer2_0_relu1_mask,  layer2_0_bn_relu1_bn_wt, layer2_0_bn_relu1_bn_bias, layer2_0_bn_relu1_bn_wt_vel, layer2_0_bn_relu1_bn_bias_vel);
 	deconv_3x3_sw<32, 16, 16, 32, 2>(layer2_0_bn_relu1_bp_out, layer2_0_conv1_weight_rot, layer2_0_conv1_bp_out);
-	conv_3x3_grad_sw<16, 32, 32, 2>(layer2_0_bn_relu1_bp_out, layer1_2_sc_out, layer2_0_conv1_weight);
+	conv_3x3_grad_sw<16, 32, 32, 2>(layer2_0_bn_relu1_bp_out, layer1_2_sc_out, layer2_0_conv1_weight, layer2_0_conv1_weight_vel);
 
 	////////////////////////////////////
 	//////////// layer2_sc  ////////////
 
-	bn_bp_sw<32, 16>(layer2_1_sc_bp_out, layer2_sc_conv_out, layer2_sc_bn_bp_out,  layer2_sc_bn_wt, layer2_sc_bn_bias);
+	bn_bp_sw<32, 16>(layer2_1_sc_bp_out, layer2_sc_conv_out, layer2_sc_bn_bp_out,  layer2_sc_bn_wt, layer2_sc_bn_bias, layer2_sc_bn_wt_vel, layer2_sc_bn_bias_vel);
 	deconv_1x1_sw<32, 16, 16, 32, 2>(layer2_sc_bn_bp_out, layer2_sc_conv_weight_rot, layer2_sc_conv_bp_out);
-	conv_1x1_grad_sw<16, 32, 32, 2>(layer2_sc_bn_bp_out, layer1_2_sc_out, layer2_sc_conv_weight);
+	conv_1x1_grad_sw<16, 32, 32, 2>(layer2_sc_bn_bp_out, layer1_2_sc_out, layer2_sc_conv_weight, layer2_sc_conv_weight_vel);
 
 	shortcut_sw<16, 32>(layer2_sc_conv_bp_out, layer2_0_conv1_bp_out, layer2_0_sc_bp_out);
 
@@ -2219,47 +2248,47 @@ void FracNet_sw(float image_sw[3][32][32]) {
 	////////////////////////////////////
 	//////////// layer1_2  /////////////
 
-	bn_relu_bp_sw<16, 32>(layer2_0_sc_bp_out, layer1_2_conv2_out, layer1_2_bn_relu2_bp_out, layer1_2_relu2_mask,  layer1_2_bn_relu2_bn_wt, layer1_2_bn_relu2_bn_bias);
+	bn_relu_bp_sw<16, 32>(layer2_0_sc_bp_out, layer1_2_conv2_out, layer1_2_bn_relu2_bp_out, layer1_2_relu2_mask,  layer1_2_bn_relu2_bn_wt, layer1_2_bn_relu2_bn_bias, layer1_2_bn_relu2_bn_wt_vel, layer1_2_bn_relu2_bn_bias_vel);
 	deconv_3x3_sw<16, 16, 32, 32, 1>(layer1_2_bn_relu2_bp_out, layer1_2_conv2_weight_rot, layer1_2_conv2_bp_out);
-	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_2_bn_relu2_bp_out, layer1_2_bn_relu1_out, layer1_2_conv2_weight);
+	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_2_bn_relu2_bp_out, layer1_2_bn_relu1_out, layer1_2_conv2_weight, layer1_2_conv2_weight_vel);
 
-	bn_relu_bp_sw<16, 32>(layer1_2_conv2_bp_out, layer1_2_conv1_out, layer1_2_bn_relu1_bp_out, layer1_2_relu1_mask,  layer1_2_bn_relu1_bn_wt, layer1_2_bn_relu1_bn_bias);
+	bn_relu_bp_sw<16, 32>(layer1_2_conv2_bp_out, layer1_2_conv1_out, layer1_2_bn_relu1_bp_out, layer1_2_relu1_mask,  layer1_2_bn_relu1_bn_wt, layer1_2_bn_relu1_bn_bias, layer1_2_bn_relu1_bn_wt_vel, layer1_2_bn_relu1_bn_bias_vel);
 	deconv_3x3_sw<16, 16, 32, 32, 1>(layer1_2_bn_relu1_bp_out, layer1_2_conv1_weight_rot, layer1_2_conv1_bp_out);
-	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_2_bn_relu1_bp_out, layer1_1_sc_out, layer1_2_conv1_weight);
+	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_2_bn_relu1_bp_out, layer1_1_sc_out, layer1_2_conv1_weight, layer1_2_conv1_weight_vel);
 
 	shortcut_sw<16, 32>(layer2_0_sc_bp_out, layer1_2_conv1_bp_out, layer1_2_sc_bp_out);
 
 	////////////////////////////////////
 	//////////// layer1_1  /////////////
 
-	bn_relu_bp_sw<16, 32>(layer1_2_sc_bp_out, layer1_1_conv2_out, layer1_1_bn_relu2_bp_out, layer1_1_relu2_mask,  layer1_1_bn_relu2_bn_wt, layer1_1_bn_relu2_bn_bias);
+	bn_relu_bp_sw<16, 32>(layer1_2_sc_bp_out, layer1_1_conv2_out, layer1_1_bn_relu2_bp_out, layer1_1_relu2_mask,  layer1_1_bn_relu2_bn_wt, layer1_1_bn_relu2_bn_bias, layer1_1_bn_relu2_bn_wt_vel, layer1_1_bn_relu2_bn_bias_vel);
 	deconv_3x3_sw<16, 16, 32, 32, 1>(layer1_1_bn_relu2_bp_out, layer1_1_conv2_weight_rot, layer1_1_conv2_bp_out);
-	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_1_bn_relu2_bp_out, layer1_1_bn_relu1_out, layer1_1_conv2_weight);
+	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_1_bn_relu2_bp_out, layer1_1_bn_relu1_out, layer1_1_conv2_weight, layer1_1_conv2_weight_vel);
 
-	bn_relu_bp_sw<16, 32>(layer1_1_conv2_bp_out, layer1_1_conv1_out, layer1_1_bn_relu1_bp_out, layer1_1_relu1_mask,  layer1_1_bn_relu1_bn_wt, layer1_1_bn_relu1_bn_bias);
+	bn_relu_bp_sw<16, 32>(layer1_1_conv2_bp_out, layer1_1_conv1_out, layer1_1_bn_relu1_bp_out, layer1_1_relu1_mask,  layer1_1_bn_relu1_bn_wt, layer1_1_bn_relu1_bn_bias, layer1_1_bn_relu1_bn_wt_vel, layer1_1_bn_relu1_bn_bias_vel);
 	deconv_3x3_sw<16, 16, 32, 32, 1>(layer1_1_bn_relu1_bp_out, layer1_1_conv1_weight_rot, layer1_1_conv1_bp_out);
-	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_1_bn_relu1_bp_out, layer1_0_sc_out, layer1_1_conv1_weight);
+	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_1_bn_relu1_bp_out, layer1_0_sc_out, layer1_1_conv1_weight, layer1_1_conv1_weight_vel);
 
 	shortcut_sw<16, 32>(layer1_2_sc_bp_out, layer1_1_conv1_bp_out, layer1_1_sc_bp_out);
 
 	////////////////////////////////////
 	//////////// layer1_0  /////////////
 
-	bn_relu_bp_sw<16, 32>(layer1_1_sc_bp_out, layer1_0_conv2_out, layer1_0_bn_relu2_bp_out, layer1_0_relu2_mask,  layer1_0_bn_relu2_bn_wt, layer1_0_bn_relu2_bn_bias);
+	bn_relu_bp_sw<16, 32>(layer1_1_sc_bp_out, layer1_0_conv2_out, layer1_0_bn_relu2_bp_out, layer1_0_relu2_mask,  layer1_0_bn_relu2_bn_wt, layer1_0_bn_relu2_bn_bias, layer1_0_bn_relu2_bn_wt_vel, layer1_0_bn_relu2_bn_bias_vel);
 	deconv_3x3_sw<16, 16, 32, 32, 1>(layer1_0_bn_relu2_bp_out, layer1_0_conv2_weight_rot, layer1_0_conv2_bp_out);
-	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_0_bn_relu2_bp_out, layer1_0_bn_relu1_out, layer1_0_conv2_weight);
+	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_0_bn_relu2_bp_out, layer1_0_bn_relu1_out, layer1_0_conv2_weight, layer1_0_conv2_weight_vel);
 
-	bn_relu_bp_sw<16, 32>(layer1_0_conv2_bp_out, layer1_0_conv1_out, layer1_0_bn_relu1_bp_out, layer1_0_relu1_mask,  layer1_0_bn_relu1_bn_wt, layer1_0_bn_relu1_bn_bias);
+	bn_relu_bp_sw<16, 32>(layer1_0_conv2_bp_out, layer1_0_conv1_out, layer1_0_bn_relu1_bp_out, layer1_0_relu1_mask,  layer1_0_bn_relu1_bn_wt, layer1_0_bn_relu1_bn_bias, layer1_0_bn_relu1_bn_wt_vel, layer1_0_bn_relu1_bn_bias_vel);
 	deconv_3x3_sw<16, 16, 32, 32, 1>(layer1_0_bn_relu1_bp_out, layer1_0_conv1_weight_rot, layer1_0_conv1_bp_out);
-	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_0_bn_relu1_bp_out, bn_relu_1_out, layer1_0_conv1_weight);
+	conv_3x3_grad_sw<16, 16, 32, 1>(layer1_0_bn_relu1_bp_out, bn_relu_1_out, layer1_0_conv1_weight, layer1_0_conv1_weight_vel);
 
 	shortcut_sw<16, 32>(layer1_1_sc_bp_out, layer1_0_conv1_bp_out, layer1_0_sc_bp_out);
 
 	////////////////////////////////////
 	//////////// Conv 1  ///////////////
 
-	bn_relu_bp_sw<16, 32>(layer1_0_sc_bp_out, conv1_out, bn_relu_1_bp_out, conv1_relu_mask,  conv1_bn_wt, conv1_bn_bias);
-	conv_3x3_grad_sw<3, 16, 32, 1>(bn_relu_1_bp_out, image_sw, conv1_weight);
+	bn_relu_bp_sw<16, 32>(layer1_0_sc_bp_out, conv1_out, bn_relu_1_bp_out, conv1_relu_mask,  conv1_bn_wt, conv1_bn_bias, conv1_bn_wt_vel, conv1_bn_bias_vel);
+	conv_3x3_grad_sw<3, 16, 32, 1>(bn_relu_1_bp_out, image_sw, conv1_weight, conv1_weight_vel);
 }
 
 
@@ -2903,7 +2932,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	ctrl_fc_hw = 0;
 	LOOP_FC:
 	generic_FC_hw(
-		pool_out_buf_hw, pool_out_buf_copy_hw, linear_weight_tile_buffer_hw, linear_out_buf_hw, ctrl_fc_hw
+		pool_out_buf_hw, pool_out_buf_copy_hw, linear_weight_tile_buffer_hw, linear_bias_hw, linear_out_buf_hw, ctrl_fc_hw
 	);
 
 	////////////////////////////////////////////////
@@ -2943,7 +2972,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	ctrl_fc_hw = 1;
 	LOOP_FC_bp:
 	generic_FC_hw(
-		pool_out_buf_hw, pool_out_buf_copy_hw, linear_weight_tile_buffer_hw, error_hw, ctrl_fc_hw
+		pool_out_buf_hw, pool_out_buf_copy_hw, linear_weight_tile_buffer_hw, linear_bias_hw, error_hw, ctrl_fc_hw
 	);
 
 	// avgpool_bp
@@ -2982,7 +3011,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3013,7 +3042,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {		
@@ -3050,7 +3079,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
@@ -3080,7 +3109,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3117,7 +3146,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {	// stride_hw-2 input
@@ -3163,7 +3192,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			lsb_fmap_tile_buffer_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3196,7 +3225,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],	// conv+bn shortcut
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3248,7 +3277,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3279,7 +3308,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3315,7 +3344,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3346,7 +3375,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3383,7 +3412,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3428,7 +3457,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			lsb_fmap_tile_buffer_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {	// stride_hw-2 input
@@ -3461,7 +3490,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],	// conv+generic_bn_hw shortcut
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {	// stride_hw-2 input
@@ -3514,7 +3543,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3545,7 +3574,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3582,7 +3611,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3613,7 +3642,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3650,7 +3679,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3681,7 +3710,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {	// input from conv1
@@ -3730,7 +3759,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3751,890 +3780,80 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	}
 }
 
+void load_image_CIFAR10()
+{
+	std::ifstream ifs_param("data_batch_1.bin", std::ios::in | std::ios::binary);
+	ifs_param.read((char*)(images), sizeof(unsigned char)*3* EPOCH *32*32);	// first uint8 is label
+	ifs_param.close();
+}
+
+void load_image_CIFAR100()
+{
+	std::ifstream ifs_param("train.bin", std::ios::in | std::ios::binary);
+	ifs_param.read((char*)(images), sizeof(unsigned char)*3* EPOCH *32*32);	// first uint8 is label
+	ifs_param.close();
+}
+
+//void load_label()
+//{
+//	std::ifstream ifs_param("labels.bin", std::ios::in | std::ios::binary);
+//	ifs_param.read((char*)(labels), sizeof(unsigned char)*EPOCH);
+//	ifs_param.close();
+//}
+
+void get_image_CIFAR10(unsigned char *images, unsigned int idx, float image[3][32][32])
+{
+	unsigned int offset = idx*3*32*32 + 1;
+	for (int c = 0; c < 3; c ++) {
+		for (int row = 0; row < 32; row ++) {
+			for (int col = 0; col < 32; col ++) {
+				image[c][row][col] = images[offset + c*32*32 + row*32 + col];
+			}
+		}
+	}
+}
+
+void get_image_CIFAR100(unsigned char *images, unsigned int idx, float image[3][32][32])
+{
+	unsigned int offset = idx*3*32*32 + 2;
+	for (int c = 0; c < 3; c ++) {
+		for (int row = 0; row < 32; row ++) {
+			for (int col = 0; col < 32; col ++) {
+				image[c][row][col] = images[offset + c*32*32 + row*32 + col];
+			}
+		}
+	}
+}
 
 int main(int argc, char **argv)
 {
 
-	// run k epochs
-	for (int k = 0; k < 50; k ++) {
+	float ctrl_tl;
+	float error_bm[10];
+	float loss_bm;
 
+	float image_sw[3][32][32];
+	load_image_CIFAR100();
+
+	// run k epochs
+	for (int k = 0; k < EPOCH; k ++) {
+
+		ctrl_tl = 1;
 		cout << "---------------" << " iteration " << k+1 << " ---------------" << endl;
 
 		////////////////////////////////
 		//////// SOFTWARE //////////////
 		////////////////////////////////
 
-		float image_sw[3][32][32];
-
-		for(int j = 0; j < 3; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					image_sw[j][row][col] = 80.0;
-				}
-			}
-		}
+		get_image_CIFAR100(images, 0, image_sw);
 
 		FracNet_sw(image_sw);
-
-//		for(int j = 0; j < 16; j ++){
-//			if (conv1_out[j][2][2] != 0) {
-//				printf("conv1_out[%d][2][2]: %f \n", j, conv1_out[j][2][2]);
-//			}
-//		}
-//		for(int j = 0; j < 16; j ++){
-//			if (bn_relu_1_out[j][2][2] != 0) {
-//				printf("bn_relu1_out[%d][2][2]: %f \n", j, bn_relu_1_out[j][2][2]);
-//			}
-//		}
-//	// layer 1
-//		for(int j = 0; j < 16; j ++){
-//			if (layer1_0_bn_relu1_out[j][2][2] != 0) {
-//				printf("layer1_0_bn_relu1_out[%d][2][2]: %f \n", j, layer1_0_bn_relu1_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 16; j ++){
-//			if (layer1_0_sc_out[j][2][2] != 0) {
-//				printf("layer1_0_sc_out[%d][2][2]: %f \n", j, layer1_0_sc_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 16; j ++){
-//			if (layer1_1_bn_relu1_out[j][2][2] != 0) {
-//				printf("layer1_1_bn_relu1_out[%d][2][2]: %f \n", j, layer1_1_bn_relu1_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 16; j ++){
-//			if (layer1_1_sc_out[j][2][2] != 0) {
-//				printf("layer1_1_sc_out[%d][2][2]: %f \n", j, layer1_1_sc_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 16; j ++){
-//			if (layer1_2_bn_relu1_out[j][2][2] != 0) {
-//				printf("layer1_2_bn_relu1_out[%d][2][2]: %f \n", j, layer1_2_bn_relu1_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 16; j ++){
-//			if (layer1_2_sc_out[j][2][2] != 0) {
-//				printf("layer1_2_sc_out[%d][2][2]: %f \n", j, layer1_2_sc_out[j][2][2]);
-//			}
-//		}
-//	// layer 2
-//		for(int j = 0; j < 32; j ++){
-//			if (layer2_sc_bn_out[j][2][2] != 0) {
-//				printf("layer2_sc_bn_out[%d][2][2]: %f \n", j, layer2_sc_bn_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 32; j ++){
-//			if (layer2_0_bn_relu1_out[j][2][2] != 0) {
-//				printf("layer2_0_bn_relu1_out[%d][2][2]: %f \n", j, layer2_0_bn_relu1_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 32; j ++){
-//			if (layer2_0_sc_out[j][2][2] != 0) {
-//				printf("layer2_0_sc_out[%d][2][2]: %f \n", j, layer2_0_sc_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 32; j ++){
-//			if (layer2_1_bn_relu1_out[j][2][2] != 0) {
-//				printf("layer2_1_bn_relu1_out[%d][2][2]: %f \n", j, layer2_1_bn_relu1_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 32; j ++){
-//			if (layer2_1_sc_out[j][2][2] != 0) {
-//				printf("layer2_1_sc_out[%d][2][2]: %f \n", j, layer2_1_sc_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 32; j ++){
-//			if (layer2_2_bn_relu1_out[j][2][2] != 0) {
-//				printf("layer2_2_bn_relu1_out[%d][2][2]: %f \n", j, layer2_2_bn_relu1_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 32; j ++){
-//			if (layer2_2_sc_out[j][2][2] != 0) {
-//				printf("layer2_2_sc_out[%d][2][2]: %f \n", j, layer2_2_sc_out[j][2][2]);
-//			}
-//		}
-//
-//	// layer 3
-//		for(int j = 0; j < 64; j ++){
-//			if (layer3_sc_bn_out[j][2][2] != 0) {
-//				printf("layer3_sc_bn_out[%d][2][2]: %f \n", j, layer3_sc_bn_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 64; j ++){
-//			if (layer3_0_bn_relu1_out[j][2][2] != 0) {
-//				printf("layer3_0_bn_relu1_out[%d][2][2]: %f \n", j, layer3_0_bn_relu1_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 64; j ++){
-//			if (layer3_0_sc_out[j][2][2] != 0) {
-//				printf("layer3_0_sc_out[%d][2][2]: %f \n", j, layer3_0_sc_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 64; j ++){
-//			if (layer3_1_bn_relu1_out[j][2][2] != 0) {
-//				printf("layer3_1_bn_relu1_out[%d][2][2]: %f \n", j, layer3_1_bn_relu1_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 64; j ++){
-//			if (layer3_1_sc_out[j][2][2] != 0) {
-//				printf("layer3_1_sc_out[%d][2][2]: %f \n", j, layer3_1_sc_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 64; j ++){
-//			if (layer3_2_bn_relu1_out[j][2][2] != 0) {
-//				printf("layer3_2_bn_relu1_out[%d][2][2]: %f \n", j, layer3_2_bn_relu1_out[j][2][2]);
-//			}
-//		}
-//
-//		for(int j = 0; j < 64; j ++){
-//			if (layer3_2_sc_out[j][2][2] != 0) {
-//				printf("layer3_2_sc_out[%d][2][2]: %f \n", j, layer3_2_sc_out[j][2][2]);
-//			}
-//		}
-//
-//		for (int i = 0; i < 64; i ++) {
-//			cout << "avg_pool_out_sw: " << avg_pool_out_sw[i] << "  " << endl;
-//		}
-//		for (int i = 0; i < 10; i ++) {
-//			cout << "linear_out_buf_sw: " << linear_out_buf_sw[i] << "  " << endl;
-//		}
 
 		cout << "loss_sw: " << loss_sw << endl;
 		for (int i = 0; i < 10; i ++) {
 			cout << "error_sw: " << error_sw[i] << "  " << endl;
 		}
 		cout << "" << endl;
-
-//		for (int i = 0; i < 64; i ++) {
-//			cout << "fc_bp_out: " << fc_bp_out[i] << "  " << endl;
-//		}
-
-/*
-
-		// for(int j = 0; j < 32; j ++){
-		// 	for(int row = 0; row < 16; row ++){
-		// 		for(int col = 0; col < 16; col ++){
-		// 			if (layer2_2_conv2_bp_out[j][row][col] != 0) {
-		// 				printf("layer2_2_conv2_bp_out[%d][%d][%d]: %f \n", j, row, col, layer2_2_conv2_bp_out[j][row][col]);
-		// 			}
-		// 		}
-		// 	}
-		// }
-
-		// =============================================================   forward   =============================================================
-		cout << "==== layer 1 fw ====" << endl;
-		/////////////////////////////////////////////    layer 1    /////////////////////////////////////////////
-		float layer1_0_conv1_out_max = 0;
-		float layer1_0_bn_relu1_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_0_conv1_out_max) < abs(layer1_0_conv1_out[j][row][col])) {
-						layer1_0_conv1_out_max = layer1_0_conv1_out[j][row][col];
-					}
-					if (abs(layer1_0_bn_relu1_out_max) < abs(layer1_0_bn_relu1_out[j][row][col])) {
-						layer1_0_bn_relu1_out_max = layer1_0_bn_relu1_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_0_conv1_out_max: " << layer1_0_conv1_out_max << endl;
-		cout << "layer1_0_bn_relu1_out_max: " << layer1_0_bn_relu1_out_max << endl;
-
-		float layer1_0_conv2_out_max = 0;
-		float layer1_0_bn_relu2_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_0_conv2_out_max) < abs(layer1_0_conv2_out[j][row][col])) {
-						layer1_0_conv2_out_max = layer1_0_conv2_out[j][row][col];
-					}
-					if (abs(layer1_0_bn_relu2_out_max) < abs(layer1_0_bn_relu2_out[j][row][col])) {
-						layer1_0_bn_relu2_out_max = layer1_0_bn_relu2_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_0_conv2_out_max: " << layer1_0_conv2_out_max << endl;
-		cout << "layer1_0_bn_relu2_out_max: " << layer1_0_bn_relu2_out_max << endl;
-
-		float layer1_1_conv1_out_max = 0;
-		float layer1_1_bn_relu1_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_1_conv1_out_max) < abs(layer1_1_conv1_out[j][row][col])) {
-						layer1_1_conv1_out_max = layer1_1_conv1_out[j][row][col];
-					}
-					if (abs(layer1_1_bn_relu1_out_max) < abs(layer1_1_bn_relu1_out[j][row][col])) {
-						layer1_1_bn_relu1_out_max = layer1_1_bn_relu1_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_1_conv1_out_max: " << layer1_1_conv1_out_max << endl;
-		cout << "layer1_1_bn_relu1_out_max: " << layer1_1_bn_relu1_out_max << endl;
-
-		float layer1_1_conv2_out_max = 0;
-		float layer1_1_bn_relu2_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_1_conv2_out_max) < abs(layer1_1_conv2_out[j][row][col])) {
-						layer1_1_conv2_out_max = layer1_1_conv2_out[j][row][col];
-					}
-					if (abs(layer1_1_bn_relu2_out_max) < abs(layer1_1_bn_relu2_out[j][row][col])) {
-						layer1_1_bn_relu2_out_max = layer1_1_bn_relu2_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_1_conv2_out_max: " << layer1_1_conv2_out_max << endl;
-		cout << "layer1_1_bn_relu2_out_max: " << layer1_1_bn_relu2_out_max << endl;
-
-		float layer1_2_conv1_out_max = 0;
-		float layer1_2_bn_relu1_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_2_conv1_out_max) < abs(layer1_2_conv1_out[j][row][col])) {
-						layer1_2_conv1_out_max = layer1_2_conv1_out[j][row][col];
-					}
-					if (abs(layer1_2_bn_relu1_out_max) < abs(layer1_2_bn_relu1_out[j][row][col])) {
-						layer1_2_bn_relu1_out_max = layer1_2_bn_relu1_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_2_conv1_out_max: " << layer1_2_conv1_out << endl;
-		cout << "layer1_2_bn_relu1_out_max: " << layer1_2_bn_relu1_out_max << endl;
-
-		float layer1_2_conv2_out_max = 0;
-		float layer1_2_bn_relu2_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_2_conv2_out_max) < abs(layer1_2_conv2_out[j][row][col])) {
-						layer1_2_conv2_out_max = layer1_2_conv2_out[j][row][col];
-					}
-					if (abs(layer1_2_bn_relu2_out_max) < abs(layer1_2_bn_relu2_out[j][row][col])) {
-						layer1_2_bn_relu2_out_max = layer1_2_bn_relu2_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_2_conv2_out_max: " << layer1_2_conv2_out_max << endl;
-		cout << "layer1_2_bn_relu2_out_max: " << layer1_2_bn_relu2_out_max << endl;
-
-
-		cout << "==== layer 2 fw ====" << endl;
-		/////////////////////////////////////////////    layer 2    /////////////////////////////////////////////
-		float layer2_sc_conv_out_max = 0;
-		float layer2_sc_bn_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_sc_conv_out_max) < abs(layer2_sc_conv_out[j][row][col])) {
-						layer2_sc_conv_out_max = layer2_sc_conv_out[j][row][col];
-					}
-					if (abs(layer2_sc_bn_out_max) < abs(layer2_sc_bn_out[j][row][col])) {
-						layer2_sc_bn_out_max = layer2_sc_bn_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_sc_conv_out_max: " << layer2_sc_conv_out_max << endl;
-		cout << "layer2_sc_bn_out_max: " << layer2_sc_bn_out_max << endl;
-
-		float layer2_0_conv1_out_max = 0;
-		float layer2_0_bn_relu1_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_0_conv1_out_max) < abs(layer2_0_conv1_out[j][row][col])) {
-						layer2_0_conv1_out_max = layer2_0_conv1_out[j][row][col];
-					}
-					if (abs(layer2_0_bn_relu1_out_max) < abs(layer2_0_bn_relu1_out[j][row][col])) {
-						layer2_0_bn_relu1_out_max = layer2_0_bn_relu1_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_0_conv1_out_max: " << layer2_0_conv1_out_max << endl;
-		cout << "layer2_0_bn_relu1_out_max: " << layer2_0_bn_relu1_out_max << endl;
-
-		float layer2_0_conv2_out_max = 0;
-		float layer2_0_bn_relu2_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_0_conv2_out_max) < abs(layer2_0_conv2_out[j][row][col])) {
-						layer2_0_conv2_out_max = layer2_0_conv2_out[j][row][col];
-					}
-					if (abs(layer2_0_bn_relu2_out_max) < abs(layer2_0_bn_relu2_out[j][row][col])) {
-						layer2_0_bn_relu2_out_max = layer2_0_bn_relu2_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_0_conv2_out_max: " << layer2_0_conv2_out_max << endl;
-		cout << "layer2_0_bn_relu2_out_max: " << layer2_0_bn_relu2_out_max << endl;
-
-		float layer2_1_conv1_out_max = 0;
-		float layer2_1_bn_relu1_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_1_conv1_out_max) < abs(layer2_1_conv1_out[j][row][col])) {
-						layer2_1_conv1_out_max = layer2_1_conv1_out[j][row][col];
-					}
-					if (abs(layer2_1_bn_relu1_out_max) < abs(layer2_1_bn_relu1_out[j][row][col])) {
-						layer2_1_bn_relu1_out_max = layer2_1_bn_relu1_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_1_conv1_out_max: " << layer2_1_conv1_out_max << endl;
-		cout << "layer2_1_bn_relu1_out_max: " << layer2_1_bn_relu1_out_max << endl;
-
-		float layer2_1_conv2_out_max = 0;
-		float layer2_1_bn_relu2_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_1_conv2_out_max) < abs(layer2_1_conv2_out[j][row][col])) {
-						layer2_1_conv2_out_max = layer2_1_conv2_out[j][row][col];
-					}
-					if (abs(layer2_1_bn_relu2_out_max) < abs(layer2_1_bn_relu2_out[j][row][col])) {
-						layer2_1_bn_relu2_out_max = layer2_1_bn_relu2_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_1_conv2_out_max: " << layer2_1_conv2_out_max << endl;
-		cout << "layer2_1_bn_relu2_out_max: " << layer2_1_bn_relu2_out_max << endl;
-
-		float layer2_2_conv1_out_max = 0;
-		float layer2_2_bn_relu1_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_2_conv1_out_max) < abs(layer2_2_conv1_out[j][row][col])) {
-						layer2_2_conv1_out_max = layer2_2_conv1_out[j][row][col];
-					}
-					if (abs(layer2_2_bn_relu1_out_max) < abs(layer2_2_bn_relu1_out[j][row][col])) {
-						layer2_2_bn_relu1_out_max = layer2_2_bn_relu1_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_2_conv1_out_max: " << layer2_2_conv1_out_max << endl;
-		cout << "layer2_2_bn_relu1_out_max: " << layer2_2_bn_relu1_out_max << endl;
-
-		float layer2_2_conv2_out_max = 0;
-		float layer2_2_bn_relu2_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_2_conv2_out_max) < abs(layer2_2_conv2_out[j][row][col])) {
-						layer2_2_conv2_out_max = layer2_2_conv2_out[j][row][col];
-					}
-					if (abs(layer2_2_bn_relu2_out_max) < abs(layer2_2_bn_relu2_out[j][row][col])) {
-						layer2_2_bn_relu2_out_max = layer2_2_bn_relu2_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_2_conv2_out_max: " << layer2_2_conv2_out_max << endl;
-		cout << "layer2_2_bn_relu2_out_max: " << layer2_2_bn_relu2_out_max << endl;
-
-		cout << "==== layer 3 fw ====" << endl;
-		/////////////////////////////////////////////    layer 3    /////////////////////////////////////////////
-
-		float layer3_sc_conv_out_max = 0;
-		float layer3_sc_bn_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_sc_conv_out_max) < abs(layer3_sc_conv_out[j][row][col])) {
-						layer3_sc_conv_out_max = layer3_sc_conv_out[j][row][col];
-					}
-					if (abs(layer3_sc_bn_out_max) < abs(layer3_sc_bn_out[j][row][col])) {
-						layer3_sc_bn_out_max = layer3_sc_bn_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_sc_conv_out_max: " << layer3_sc_conv_out_max << endl;
-		cout << "layer3_sc_bn_out_max: " << layer3_sc_bn_out_max << endl;
-
-		float layer3_0_conv1_out_max = 0;
-		float layer3_0_bn_relu1_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_0_conv1_out_max) < abs(layer3_0_conv1_out[j][row][col])) {
-						layer3_0_conv1_out_max = layer3_0_conv1_out[j][row][col];
-					}
-					if (abs(layer3_0_bn_relu1_out_max) < abs(layer3_0_bn_relu1_out[j][row][col])) {
-						layer3_0_bn_relu1_out_max = layer3_0_bn_relu1_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_0_conv1_out_max: " << layer3_0_conv1_out_max << endl;
-		cout << "layer3_0_bn_relu1_out_max: " << layer3_0_bn_relu1_out_max << endl;
-
-		float layer3_0_conv2_out_max = 0;
-		float layer3_0_bn_relu2_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_0_conv2_out_max) < abs(layer3_0_conv2_out[j][row][col])) {
-						layer3_0_conv2_out_max = layer3_0_conv2_out[j][row][col];
-					}
-					if (abs(layer3_0_bn_relu2_out_max) < abs(layer3_0_bn_relu2_out[j][row][col])) {
-						layer3_0_bn_relu2_out_max = layer3_0_bn_relu2_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_0_conv2_out_max: " << layer3_0_conv2_out_max << endl;
-		cout << "layer3_0_bn_relu2_out_max: " << layer3_0_bn_relu2_out_max << endl;
-
-		float layer3_1_conv1_out_max = 0;
-		float layer3_1_bn_relu1_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_1_conv1_out_max) < abs(layer3_1_conv1_out[j][row][col])) {
-						layer3_1_conv1_out_max = layer3_1_conv1_out[j][row][col];
-					}
-					if (abs(layer3_1_bn_relu1_out_max) < abs(layer3_1_bn_relu1_out[j][row][col])) {
-						layer3_1_bn_relu1_out_max = layer3_1_bn_relu1_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_1_conv1_out_max: " << layer3_1_conv1_out_max << endl;
-		cout << "layer3_1_bn_relu1_out_max: " << layer3_1_bn_relu1_out_max << endl;
-
-		float layer3_1_conv2_out_max = 0;
-		float layer3_1_bn_relu2_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_1_conv2_out_max) < abs(layer3_1_conv2_out[j][row][col])) {
-						layer3_1_conv2_out_max = layer3_1_conv2_out[j][row][col];
-					}
-					if (abs(layer3_1_bn_relu2_out_max) < abs(layer3_1_bn_relu2_out[j][row][col])) {
-						layer3_1_bn_relu2_out_max = layer3_1_bn_relu2_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_1_conv2_out_max: " << layer3_1_conv2_out_max << endl;
-		cout << "layer3_1_bn_relu2_out_max: " << layer3_1_bn_relu2_out_max << endl;
-
-		float layer3_2_conv1_out_max = 0;
-		float layer3_2_bn_relu1_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_2_conv1_out_max) < abs(layer3_2_conv1_out[j][row][col])) {
-						layer3_2_conv1_out_max = layer3_2_conv1_out[j][row][col];
-					}
-					if (abs(layer3_2_bn_relu1_out_max) < abs(layer3_2_bn_relu1_out[j][row][col])) {
-						layer3_2_bn_relu1_out_max = layer3_2_bn_relu1_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_2_conv1_out_max: " << layer3_2_conv1_out_max << endl;
-		cout << "layer3_2_bn_relu1_out_max: " << layer3_2_bn_relu1_out_max << endl;
-
-		float layer3_2_conv2_out_max = 0;
-		float layer3_2_bn_relu2_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_2_conv2_out_max) < abs(layer3_2_conv2_out[j][row][col])) {
-						layer3_2_conv2_out_max = layer3_2_conv2_out[j][row][col];
-					}
-					if (abs(layer3_2_bn_relu2_out_max) < abs(layer3_2_bn_relu2_out[j][row][col])) {
-						layer3_2_bn_relu2_out_max = layer3_2_bn_relu2_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_2_conv2_out_max: " << layer3_2_conv2_out_max << endl;
-		cout << "layer3_2_bn_relu2_out_max: " << layer3_2_bn_relu2_out_max << endl;
-
-		// =============================================================   backward  =============================================================
-		cout << "==== layer 3 bw ====" << endl;
-		/////////////////////////////////////////////    layer 3    /////////////////////////////////////////////
-
-		float layer3_2_bn_relu2_bp_out_max = 0;
-		float layer3_2_conv2_bp_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_2_bn_relu2_bp_out_max) < abs(layer3_2_bn_relu2_bp_out[j][row][col])) {
-						layer3_2_bn_relu2_bp_out_max = layer3_2_bn_relu2_bp_out[j][row][col];
-					}
-					if (abs(layer3_2_conv2_bp_out_max) < abs(layer3_2_conv2_bp_out[j][row][col])) {
-						layer3_2_conv2_bp_out_max = layer3_2_conv2_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_2_bn_relu2_bp_out_max: " << layer3_2_bn_relu2_bp_out_max << endl;
-		cout << "layer3_2_conv2_bp_out_max: " << layer3_2_conv2_bp_out_max << endl;
-
-		float layer3_2_bn_relu1_bp_out_max = 0;
-		float layer3_2_conv1_bp_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_2_bn_relu1_bp_out_max) < abs(layer3_2_bn_relu1_bp_out[j][row][col])) {
-						layer3_2_bn_relu1_bp_out_max = layer3_2_bn_relu1_bp_out[j][row][col];
-					}
-					if (abs(layer3_2_conv1_bp_out_max) < abs(layer3_2_conv1_bp_out[j][row][col])) {
-						layer3_2_conv1_bp_out_max = layer3_2_conv1_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_2_bn_relu1_bp_out_max: " << layer3_2_bn_relu1_bp_out_max << endl;
-		cout << "layer3_2_conv1_bp_out_max: " << layer3_2_conv1_bp_out_max << endl;
-
-		float layer3_1_bn_relu2_bp_out_max = 0;
-		float layer3_1_conv2_bp_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_1_bn_relu2_bp_out_max) < abs(layer3_1_bn_relu2_bp_out[j][row][col])) {
-						layer3_1_bn_relu2_bp_out_max = layer3_1_bn_relu2_bp_out[j][row][col];
-					}
-					if (abs(layer3_1_conv2_bp_out_max) < abs(layer3_1_conv2_bp_out[j][row][col])) {
-						layer3_1_conv2_bp_out_max = layer3_1_conv2_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_1_bn_relu2_bp_out_max: " << layer3_1_bn_relu2_bp_out_max << endl;
-		cout << "layer3_1_conv2_bp_out_max: " << layer3_1_conv2_bp_out_max << endl;
-
-		float layer3_1_bn_relu1_bp_out_max = 0;
-		float layer3_1_conv1_bp_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_1_bn_relu1_bp_out_max) < abs(layer3_1_bn_relu1_bp_out[j][row][col])) {
-						layer3_1_bn_relu1_bp_out_max = layer3_1_bn_relu1_bp_out[j][row][col];
-					}
-					if (abs(layer3_1_conv1_bp_out_max) < abs(layer3_1_conv1_bp_out[j][row][col])) {
-						layer3_1_conv1_bp_out_max = layer3_1_conv1_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_1_bn_relu1_bp_out_max: " << layer3_1_bn_relu1_bp_out_max << endl;
-		cout << "layer3_1_conv1_bp_out_max: " << layer3_1_conv1_bp_out_max << endl;
-
-		float layer3_0_bn_relu2_bp_out_max = 0;
-		float layer3_0_conv2_bp_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_0_bn_relu2_bp_out_max) < abs(layer3_0_bn_relu2_bp_out[j][row][col])) {
-						layer3_0_bn_relu2_bp_out_max = layer3_0_bn_relu2_bp_out[j][row][col];
-					}
-					if (abs(layer3_0_conv2_bp_out_max) < abs(layer3_0_conv2_bp_out[j][row][col])) {
-						layer3_0_conv2_bp_out_max = layer3_0_conv2_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_0_bn_relu2_bp_out_max: " << layer3_0_bn_relu2_bp_out_max << endl;
-		cout << "layer3_0_conv2_bp_out_max: " << layer3_0_conv2_bp_out_max << endl;
-
-		float layer3_0_bn_relu1_bp_out_max = 0;
-		float layer3_0_conv1_bp_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_0_bn_relu1_bp_out_max) < abs(layer3_0_bn_relu1_bp_out[j][row][col])) {
-						layer3_0_bn_relu1_bp_out_max = layer3_0_bn_relu1_bp_out[j][row][col];
-					}
-					if (abs(layer3_0_conv1_bp_out_max) < abs(layer3_0_conv1_bp_out[j][row][col])) {
-						layer3_0_conv1_bp_out_max = layer3_0_conv1_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_0_bn_relu1_bp_out_max: " << layer3_0_bn_relu1_bp_out_max << endl;
-		cout << "layer3_0_conv1_bp_out_max: " << layer3_0_conv1_bp_out_max << endl;
-
-		float layer3_sc_bn_bp_out_max = 0;
-		float layer3_sc_conv_bp_out_max = 0;
-		for(int j = 0; j < 64; j ++){
-			for(int row = 0; row < 8; row ++){
-				for(int col = 0; col < 8; col ++){
-					if (abs(layer3_sc_bn_bp_out_max) < abs(layer3_sc_bn_bp_out[j][row][col])) {
-						layer3_sc_bn_bp_out_max = layer3_sc_bn_bp_out[j][row][col];
-					}
-					if (abs(layer3_sc_conv_bp_out_max) < abs(layer3_sc_conv_bp_out[j][row][col])) {
-						layer3_sc_conv_bp_out_max = layer3_sc_conv_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer3_sc_bn_bp_out_max: " << layer3_sc_bn_bp_out_max << endl;
-		cout << "layer3_sc_conv_bp_out_max: " << layer3_sc_conv_bp_out_max << endl;
-
-		cout << "==== layer 2 bw ====" << endl;
-		/////////////////////////////////////////////    layer 2    /////////////////////////////////////////////
-
-		float layer2_2_bn_relu2_bp_out_max = 0;
-		float layer2_2_conv2_bp_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_2_bn_relu2_bp_out_max) < abs(layer2_2_bn_relu2_bp_out[j][row][col])) {
-						layer2_2_bn_relu2_bp_out_max = layer2_2_bn_relu2_bp_out[j][row][col];
-					}
-					if (abs(layer2_2_conv2_bp_out_max) < abs(layer2_2_conv2_bp_out[j][row][col])) {
-						layer2_2_conv2_bp_out_max = layer2_2_conv2_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_2_bn_relu2_bp_out_max: " << layer2_2_bn_relu2_bp_out_max << endl;
-		cout << "layer2_2_conv2_bp_out_max: " << layer2_2_conv2_bp_out_max << endl;
-
-		float layer2_2_bn_relu1_bp_out_max = 0;
-		float layer2_2_conv1_bp_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_2_bn_relu1_bp_out_max) < abs(layer2_2_bn_relu1_bp_out[j][row][col])) {
-						layer2_2_bn_relu1_bp_out_max = layer2_2_bn_relu1_bp_out[j][row][col];
-					}
-					if (abs(layer2_2_conv1_bp_out_max) < abs(layer2_2_conv1_bp_out[j][row][col])) {
-						layer2_2_conv1_bp_out_max = layer2_2_conv1_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_2_bn_relu1_bp_out_max: " << layer2_2_bn_relu1_bp_out_max << endl;
-		cout << "layer2_2_conv1_bp_out_max: " << layer2_2_conv1_bp_out_max << endl;
-
-		float layer2_1_bn_relu2_bp_out_max = 0;
-		float layer2_1_conv2_bp_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_1_bn_relu2_bp_out_max) < abs(layer2_1_bn_relu2_bp_out[j][row][col])) {
-						layer2_1_bn_relu2_bp_out_max = layer2_1_bn_relu2_bp_out[j][row][col];
-					}
-					if (abs(layer2_1_conv2_bp_out_max) < abs(layer2_1_conv2_bp_out[j][row][col])) {
-						layer2_1_conv2_bp_out_max = layer2_1_conv2_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_1_bn_relu2_bp_out_max: " << layer2_1_bn_relu2_bp_out_max << endl;
-		cout << "layer2_1_conv2_bp_out_max: " << layer2_1_conv2_bp_out_max << endl;
-
-		float layer2_1_bn_relu1_bp_out_max = 0;
-		float layer2_1_conv1_bp_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_1_bn_relu1_bp_out_max) < abs(layer2_1_bn_relu1_bp_out[j][row][col])) {
-						layer2_1_bn_relu1_bp_out_max = layer2_1_bn_relu1_bp_out[j][row][col];
-					}
-					if (abs(layer2_1_conv1_bp_out_max) < abs(layer2_1_conv1_bp_out[j][row][col])) {
-						layer2_1_conv1_bp_out_max = layer2_1_conv1_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_1_bn_relu1_bp_out_max: " << layer2_1_bn_relu1_bp_out_max << endl;
-		cout << "layer2_1_conv1_bp_out_max: " << layer2_1_conv1_bp_out_max << endl;
-
-		float layer2_0_bn_relu2_bp_out_max = 0;
-		float layer2_0_conv2_bp_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_0_bn_relu2_bp_out_max) < abs(layer2_0_bn_relu2_bp_out[j][row][col])) {
-						layer2_0_bn_relu2_bp_out_max = layer2_0_bn_relu2_bp_out[j][row][col];
-					}
-					if (abs(layer2_0_conv2_bp_out_max) < abs(layer2_0_conv2_bp_out[j][row][col])) {
-						layer2_0_conv2_bp_out_max = layer2_0_conv2_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_1_bn_relu1_bp_out_max: " << layer2_1_bn_relu1_bp_out_max << endl;
-		cout << "layer2_0_conv2_bp_out_max: " << layer2_0_conv2_bp_out_max << endl;
-
-		float layer2_0_bn_relu1_bp_out_max = 0;
-		float layer2_0_conv1_bp_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_0_bn_relu1_bp_out_max) < abs(layer2_0_bn_relu1_bp_out[j][row][col])) {
-						layer2_0_bn_relu1_bp_out_max = layer2_0_bn_relu1_bp_out[j][row][col];
-					}
-					if (abs(layer2_0_conv1_bp_out_max) < abs(layer2_0_conv1_bp_out[j][row][col])) {
-						layer2_0_conv1_bp_out_max = layer2_0_conv1_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_0_bn_relu1_bp_out_max: " << layer2_0_bn_relu1_bp_out_max << endl;
-		cout << "layer2_0_conv1_bp_out_max: " << layer2_0_conv1_bp_out_max << endl;
-
-		float layer2_sc_bn_bp_out_max = 0;
-		float layer2_sc_conv_bp_out_max = 0;
-		for(int j = 0; j < 32; j ++){
-			for(int row = 0; row < 16; row ++){
-				for(int col = 0; col < 16; col ++){
-					if (abs(layer2_sc_bn_bp_out_max) < abs(layer2_sc_bn_bp_out[j][row][col])) {
-						layer2_sc_bn_bp_out_max = layer2_sc_bn_bp_out[j][row][col];
-					}
-					if (abs(layer2_sc_conv_bp_out_max) < abs(layer2_sc_conv_bp_out[j][row][col])) {
-						layer2_sc_conv_bp_out_max = layer2_sc_conv_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer2_sc_bn_bp_out_max: " << layer2_sc_bn_bp_out_max << endl;
-		cout << "layer2_sc_conv_bp_out_max: " << layer2_sc_conv_bp_out_max << endl;
-
-		cout << "==== layer 1 bw ====" << endl;
-		/////////////////////////////////////////////    layer 1    /////////////////////////////////////////////
-
-		float layer1_2_bn_relu2_bp_out_max = 0;
-		float layer1_2_conv2_bp_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_2_bn_relu2_bp_out_max) < abs(layer1_2_bn_relu2_bp_out[j][row][col])) {
-						layer1_2_bn_relu2_bp_out_max = layer1_2_bn_relu2_bp_out[j][row][col];
-					}
-					if (abs(layer1_2_conv2_bp_out_max) < abs(layer1_2_conv2_bp_out[j][row][col])) {
-						layer1_2_conv2_bp_out_max = layer1_2_conv2_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_2_bn_relu2_bp_out_max: " << layer1_2_bn_relu2_bp_out_max << endl;
-		cout << "layer1_2_conv2_bp_out_max: " << layer1_2_conv2_bp_out_max << endl;
-
-		float layer1_2_bn_relu1_bp_out_max = 0;
-		float layer1_2_conv1_bp_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_2_bn_relu1_bp_out_max) < abs(layer1_2_bn_relu1_bp_out[j][row][col])) {
-						layer1_2_bn_relu1_bp_out_max = layer1_2_bn_relu1_bp_out[j][row][col];
-					}
-					if (abs(layer1_2_conv1_bp_out_max) < abs(layer1_2_conv1_bp_out[j][row][col])) {
-						layer1_2_conv1_bp_out_max = layer1_2_conv1_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_2_bn_relu1_bp_out_max: " << layer1_2_bn_relu1_bp_out_max << endl;
-		cout << "layer1_2_conv1_bp_out_max: " << layer1_2_conv1_bp_out_max << endl;
-
-		float layer1_1_bn_relu2_bp_out_max = 0;
-		float layer1_1_conv2_bp_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_1_bn_relu2_bp_out_max) < abs(layer1_1_bn_relu2_bp_out[j][row][col])) {
-						layer1_1_bn_relu2_bp_out_max = layer1_1_bn_relu2_bp_out[j][row][col];
-					}
-					if (abs(layer1_1_conv2_bp_out_max) < abs(layer1_1_conv2_bp_out[j][row][col])) {
-						layer1_1_conv2_bp_out_max = layer1_1_conv2_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_1_bn_relu2_bp_out_max: " << layer1_1_bn_relu2_bp_out_max << endl;
-		cout << "layer1_1_conv2_bp_out_max: " << layer1_1_conv2_bp_out_max << endl;
-
-		float layer1_1_bn_relu1_bp_out_max = 0;
-		float layer1_1_conv1_bp_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_1_bn_relu1_bp_out_max) < abs(layer1_1_bn_relu1_bp_out[j][row][col])) {
-						layer1_1_bn_relu1_bp_out_max = layer1_1_bn_relu1_bp_out[j][row][col];
-					}
-					if (abs(layer1_1_conv1_bp_out_max) < abs(layer1_1_conv1_bp_out[j][row][col])) {
-						layer1_1_conv1_bp_out_max = layer1_1_conv1_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_1_bn_relu1_bp_out_max: " << layer1_1_bn_relu1_bp_out_max << endl;
-		cout << "layer1_1_conv1_bp_out_max: " << layer1_1_conv1_bp_out_max << endl;
-
-		float layer1_0_bn_relu2_bp_out_max = 0;
-		float layer1_0_conv2_bp_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_0_bn_relu2_bp_out_max) < abs(layer1_0_bn_relu2_bp_out[j][row][col])) {
-						layer1_0_bn_relu2_bp_out_max = layer1_0_bn_relu2_bp_out[j][row][col];
-					}
-					if (abs(layer1_0_conv2_bp_out_max) < abs(layer1_0_conv2_bp_out[j][row][col])) {
-						layer1_0_conv2_bp_out_max = layer1_0_conv2_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_0_bn_relu2_bp_out_max: " << layer1_0_bn_relu2_bp_out_max << endl;
-		cout << "layer1_0_conv2_bp_out_max: " << layer1_0_conv2_bp_out_max << endl;
-
-		float layer1_0_bn_relu1_bp_out_max = 0;
-		float layer1_0_conv1_bp_out_max = 0;
-		for(int j = 0; j < 16; j ++){
-			for(int row = 0; row < 32; row ++){
-				for(int col = 0; col < 32; col ++){
-					if (abs(layer1_0_bn_relu1_bp_out_max) < abs(layer1_0_bn_relu1_bp_out[j][row][col])) {
-						layer1_0_bn_relu1_bp_out_max = layer1_0_bn_relu1_bp_out[j][row][col];
-					}
-					if (abs(layer1_0_conv1_bp_out_max) < abs(layer1_0_conv1_bp_out[j][row][col])) {
-						layer1_0_conv1_bp_out_max = layer1_0_conv1_bp_out[j][row][col];
-					}
-				}
-			}
-		}
-		cout << "layer1_0_bn_relu1_bp_out_max: " << layer1_0_bn_relu1_bp_out_max << endl;
-*/
 
 		////////////////////////////////
 		//////// HARDWARE //////////////
@@ -4652,14 +3871,28 @@ int main(int argc, char **argv)
 		//////// bm(2, 5) //////////////
 		////////////////////////////////
 
-		float error_bm[10];
-		float loss_bm;
-
-		FracNet_T(image_sw, loss_bm, error_bm);
+		FracNet_T(image_sw, ctrl_tl, loss_bm, error_bm);
 
 		cout << "loss_bm: " << loss_bm << endl;
 		for (int i = 0; i < 10; i ++) {
 			cout << "error_bm: " << error_bm[i] << "  " << endl;
+		}
+	}
+
+	// run k epochs fune-tuning
+	load_image_CIFAR10();
+	for (int k = 0; k < EPOCH; k ++) {
+
+		ctrl_tl = 0;
+		cout << "---------------" << " iteration_tl " << k+1 << " ---------------" << endl;
+
+		get_image_CIFAR10(images, 10, image_sw);
+
+		FracNet_T(image_sw, ctrl_tl, loss_bm, error_bm);
+
+		cout << "tl_loss_bm: " << loss_bm << endl;
+		for (int i = 0; i < 10; i ++) {
+			cout << "tl_error_bm: " << error_bm[i] << "  " << endl;
 		}
 	}
 	return 0;
