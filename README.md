@@ -28,5 +28,7 @@ The anonymous link describes an HLS-based CNN training accelerator using the bac
 >> ```conv_weights_tb.h``` <br>
 >> ```tb.cc``` <br>
 >> ```weights_tb.h``` <br>
+>> ```data_batch_1.bin``` <br>
+>> ```train.bin``` <br>
 
 
