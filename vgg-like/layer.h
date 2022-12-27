@@ -15,10 +15,10 @@
 
 using namespace std;
 const uint2 exp_bias = 2;	// ieee-754 shared_exp_bias
-float lr = 1e-2;
+float lr = 0.02; //1e-2;
 float eps = 1e-10;
 //float ee = 2.718281828459;
-
+float mom = 0; //0.9;
 
 //--------------------------------
 // block minifloat qantisation
@@ -364,6 +364,143 @@ void rot180_1x1
 	}
 }
 
+//void conv_3x3
+//(
+//	float input[CHANNEL_IN_T][WIDTH][WIDTH],			// in on-chip
+//	float weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
+//	float output[CHANNEL_OUT_T][WIDTH][WIDTH],			// out on-chip
+//	float output_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],
+//
+//	int stride,
+//	int H_fmap_in,
+//	int H_fmap_out,
+//	int c_in,
+//	uint1 ctrl_conv,
+//
+//	float bias_gap4add[CHANNEL_OUT_T]
+//)
+//{
+//// #pragma HLS DEPENDENCE variable=output inter false
+//
+//	int row_input;
+//	int col_input;
+//	int row_in;
+//	int col_in;
+//	float out_temp[CHANNEL_OUT_T];
+//	float output_tmp[CHANNEL_OUT_T][WIDTH][WIDTH];
+////#pragma HLS DEPENDENCE variable=out_temp inter false
+////#pragma HLS DEPENDENCE variable=output inter false
+//
+//#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
+//#pragma HLS ARRAY_PARTITION variable=output_tmp dim=1 complete
+//
+//#pragma HLS ARRAY_PARTITION variable=input dim=1 complete
+//#pragma HLS ARRAY_PARTITION variable=weight dim=1 complete
+//#pragma HLS ARRAY_PARTITION variable=weight dim=2 complete
+//#pragma HLS ARRAY_PARTITION variable=weight dim=3 complete
+//#pragma HLS ARRAY_PARTITION variable=weight dim=4 complete
+//#pragma HLS ARRAY_PARTITION variable=output dim=1 complete
+//#pragma HLS ARRAY_PARTITION variable=output_DDR dim=1 complete
+//
+////	float max_abs[CHANNEL_OUT_T] = {0};
+////#pragma HLS ARRAY_PARTITION variable=max_abs dim=1 complete
+//#pragma HLS ARRAY_PARTITION variable=bias_gap4add dim=1 complete
+////#pragma HLS ARRAY_PARTITION variable=act_bias_shift dim=1 complete
+////#pragma HLS ARRAY_PARTITION variable=shared_exp_bias dim=1 complete
+//
+//	float line_buffer_act[CHANNEL_IN_T][2][WIDTH] = {0};
+//	float window_buffer_act[CHANNEL_IN_T][3][3] = {0};
+//#pragma HLS ARRAY_PARTITION variable=line_buffer_act complete dim=1
+//#pragma HLS ARRAY_PARTITION variable=line_buffer_act complete dim=2
+//#pragma HLS ARRAY_PARTITION variable=window_buffer_act complete dim=0
+//
+//	for (int ii = 0; ii < stride; ii ++) {
+//// #pragma HLS LOOP_TRIPCOUNT min = 1 max = 2
+//		for (int row = 0; row < H_fmap_out; row ++) {
+//// #pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+//			for (int jj = 0; jj < stride; jj ++) {
+//// #pragma HLS LOOP_TRIPCOUNT min = 1 max = 2
+//				for (int col = 0; col < H_fmap_out; col ++) {
+//// #pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+//#pragma HLS PIPELINE II=1
+//
+//					// buffer initiation
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						if (c_in > 0) {
+//							out_temp[co] = output[co][row][col];
+//						}
+//						else {
+//							out_temp[co] = 0;
+//						}
+//					}
+//
+//					// update window buffer and line buffer
+//					for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//						for (int i = 0; i < 3; i ++) {
+//							window_buffer_act[cin][i][0] = window_buffer_act[cin][i][1];
+//							window_buffer_act[cin][i][1] = window_buffer_act[cin][i][2];
+//						}
+//						// stride-2 transposed Conv
+//						if (stride > 1 && ctrl_conv == 1) {
+//							row_input = row/2;
+//							col_input = col/2;
+//							window_buffer_act[cin][0][2] = (line_buffer_act[cin][0][col]);
+//							window_buffer_act[cin][1][2] = (line_buffer_act[cin][0][col] = line_buffer_act[cin][1][col]);
+//							window_buffer_act[cin][2][2] = (line_buffer_act[cin][1][col] = (row_input % 2 == 0 && col_input % 2 == 0) ? input[cin][row_input][col_input] : float(0));	// dilated with 0-row
+//						}
+//						else {
+//							row_input = row + ii*H_fmap_out;
+//							col_input = col + jj*H_fmap_out;
+//							window_buffer_act[cin][0][2] = (line_buffer_act[cin][0][col]);
+//							window_buffer_act[cin][1][2] = (line_buffer_act[cin][0][col] = line_buffer_act[cin][1][col]);
+//							window_buffer_act[cin][2][2] = (line_buffer_act[cin][1][col] = input[cin][row_input][col_input]);
+//						}
+//					}
+//
+//					// conv 3x3
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						float accum = 0;
+//						for (int krow = 0; krow < 3; krow ++) {
+//							for (int kcol = 0; kcol < 3; kcol ++) {
+//								for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//									row_in = (stride > 1 && ctrl_conv == 0) ? (row + krow - 2 + ii*H_fmap_out) : (row + krow - 2);
+//									col_in = (stride > 1 && ctrl_conv == 0) ? (col + kcol - 2 + jj*H_fmap_out) : (col + kcol - 2);
+//									if (row_in >= 0 && row_in < H_fmap_in && col_in >= 0 && col_in < H_fmap_in) {
+//										float act = window_buffer_act[cin][krow][kcol];
+//										float wt = weight[co][cin][krow][kcol];
+//										accum += act * wt;
+//										// accum = bm_mac(act, wt, accum);
+//									}
+//								}
+//							}
+//						}
+//						out_temp[co] += accum;
+////						out_temp[co] = bm_add(accum, out_temp[co], bias_gap4add[co]);
+//						if (stride > 1 && ctrl_conv == 0) {
+//							output_tmp[co][row + ii*H_fmap_out][col + jj*H_fmap_out] = out_temp[co];
+//						}
+//					}
+//
+//					// write out
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						if (stride > 1 && ctrl_conv == 0) {
+//							output[co][row][col] = output_tmp[co][row*2][col*2];
+//						} else {
+//							output[co][row][col] = out_temp[co];
+//						}
+//					}
+//					if (ctrl_conv == 0) {
+//						for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//							output_DDR[co][row][col] = out_temp[co];
+////							if (out_temp[co].range(1,0) > max_abs[co].range(1,0)) max_abs[co] = out_temp[co];
+//						}
+//					}
+//				}
+//			}
+//		}
+//	}
+//}
+
 void conv_3x3
 (
 	float input[CHANNEL_IN_T][WIDTH][WIDTH],			// in on-chip
@@ -463,8 +600,8 @@ void conv_3x3
 						for (int krow = 0; krow < 3; krow ++) {
 							for (int kcol = 0; kcol < 3; kcol ++) {
 								for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
-									row_in = (stride > 1 && ctrl_conv == 0) ? (row + krow - 2 + ii*H_fmap_out) : (row + krow - 2);
-									col_in = (stride > 1 && ctrl_conv == 0) ? (col + kcol - 2 + jj*H_fmap_out) : (col + kcol - 2);
+									row_in = (stride > 1 && ctrl_conv == 0) ? (row + krow - 1 + ii*H_fmap_out) : (row + krow - 1);
+									col_in = (stride > 1 && ctrl_conv == 0) ? (col + kcol - 1 + jj*H_fmap_out) : (col + kcol - 1);
 									if (row_in >= 0 && row_in < H_fmap_in && col_in >= 0 && col_in < H_fmap_in) {
 										float act = window_buffer_act[cin][krow][kcol];
 										float wt = weight[co][cin][krow][kcol];
@@ -501,175 +638,354 @@ void conv_3x3
 	}
 }
 
-void conv_1x1
-(
-	float input[CHANNEL_IN_T][WIDTH][WIDTH],			// in on-chip
-	float weight[CHANNEL_OUT_T][CHANNEL_IN_T],
-	float output[CHANNEL_OUT_T][WIDTH][WIDTH],		// out on-chip
-	float output_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],	// out off-chip
+//void conv_3x3_grad
+//(
+//	float input[CHANNEL_IN_T][WIDTH][WIDTH],				// in on-chip
+//	float weight[CHANNEL_OUT_T][WIDTH][WIDTH],
+//	float output[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],		// out on-chip
+//
+//	int stride,
+//	int H_fmap_in
+//)
+//{
+//	float accum;
+//	float weight_dil[CHANNEL_OUT_T][WIDTH][WIDTH];
+//
+//	// buffer init
+//	for (int row_in = 0; row_in < WIDTH; row_in ++) {
+//		for (int col_in = 0; col_in < WIDTH; col_in ++) {
+//			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//				weight_dil[co][row_in][col_in] = 0;
+//			}
+//		}
+//	}
+//
+//	// weight dilation
+//	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//		for (int krow = 0; krow < H_fmap_in; krow ++) {
+//			for (int kcol = 0; kcol < H_fmap_in; kcol ++) {
+//				weight_dil[co][krow*stride][kcol*stride] = weight[co][krow][kcol];
+//			}
+//		}
+//	}
+//
+//	// conv3x3 grad
+//	for (int row = 0; row < 3; row ++) {
+//		for (int col = 0; col < 3; col ++) {
+//			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//				for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+//					accum = 0;
+//					for (int krow = 0; krow < H_fmap_in*stride; krow ++) {
+//						for (int kcol = 0; kcol < H_fmap_in*stride; kcol ++) {
+//							int row_in = row + krow - 1;
+//							int col_in = col + kcol - 1;
+//							if (row_in >= 0 && row_in < H_fmap_in*stride && col_in >= 0 && col_in < H_fmap_in*stride) {
+//								float act = input[ci][row_in][col_in];
+//								float wt = weight_dil[co][krow][kcol];
+//								accum += act * wt;
+////								if (act != 0 && wt != 0) printf("act: %f, wt: %f \n", act, wt);
+//							}
+//						}
+//					}
+//					output[co][ci][row][col] += -lr * accum;
+////					if (accum != 0) printf("weight grad [%d][%d][%d][%d]: %f \n", co, ci, row, col, accum);
+////					if (accum != 0 && abs(output[co][ci][row][col]) > 1) printf("stride: %d, updated weight [%d][%d][%d][%d]: %f \n", stride, co, ci, row, col, output[co][ci][row][col]);
+//				}
+//			}
+//		}
+//	}
+//}
 
-	int stride,
-	int H_fmap_in,
-	int H_fmap_out,
-	int c_in,
-	uint1 ctrl_conv,
-
-//	float shared_exp_bias[CHANNEL_OUT_T],
-	float bias_gap4add[CHANNEL_OUT_T]
-//	float act_bias_shift[CHANNEL_OUT_T]
-)
-{
-// #pragma HLS DEPENDENCE variable=output inter false
-
-	int row_in;
-	int col_in;
-	float act[CHANNEL_IN_T];
-	float wt[CHANNEL_OUT_T][CHANNEL_IN_T];
-	float accum[CHANNEL_OUT_T];
-	float out_temp[CHANNEL_OUT_T];
-#pragma HLS ARRAY_PARTITION variable=act dim=1 complete
-#pragma HLS ARRAY_PARTITION variable=wt dim=1 complete
-#pragma HLS ARRAY_PARTITION variable=wt dim=2 complete
-#pragma HLS ARRAY_PARTITION variable=accum dim=1 complete
-#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
-
-//	float max_abs[CHANNEL_OUT_T] = {0};
-//#pragma HLS ARRAY_PARTITION variable=max_abs dim=1 complete
-#pragma HLS ARRAY_PARTITION variable=bias_gap4add dim=1 complete
-//#pragma HLS ARRAY_PARTITION variable=act_bias_shift dim=1 complete
-//#pragma HLS ARRAY_PARTITION variable=shared_exp_bias dim=1 complete
-
-#pragma HLS ARRAY_PARTITION variable=input dim=1 complete
-#pragma HLS ARRAY_PARTITION variable=weight dim=1 complete
-#pragma HLS ARRAY_PARTITION variable=weight dim=2 complete
-#pragma HLS ARRAY_PARTITION variable=output dim=1 complete
-#pragma HLS ARRAY_PARTITION variable=output_DDR dim=1 complete
-
-	for (int row = 0; row < H_fmap_out; row++) {
-// // #pragma HLS LOOP_TRIPCOUNT min = 8 max = 32
-		for (int col = 0; col < H_fmap_out; col++) {
-// // #pragma HLS LOOP_TRIPCOUNT min = 8 max = 32
-#pragma HLS PIPELINE II=1
-			// buffer initiation
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				if (c_in > 0) {
-					out_temp[co] = output[co][row][col];
-				}
-				else {
-					out_temp[co] = 0;
-				}
-			}
-			// load activation
-			for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
-				if (ctrl_conv == 0) {
-					row_in = row*2;
-					col_in = col*2;
-				}
-				else {
-					row_in = (row % 2 == 0) ? row/2 : -1;	// row_in = ((row + krow + pad) % stride == pad) ? (krow + row - pad)/stride : -1;
-					col_in = (col % 2 == 0) ? col/2 : -1;
-				}
-				if (row_in >= 0 && row_in < H_fmap_in && col_in >= 0 && col_in < H_fmap_in) {
-					act[cin] = input[cin][row_in][col_in];
-				}
-			}
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
-					if (ctrl_conv == 0) {
-						wt[co][cin] = weight[co][cin];
-					}
-					else {
-						wt[co][cin] = weight[cin][co];
-					}
-				}
-			}
-			// conv 3x3
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				accum[co] = 0;
-				for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
-					accum[co] += act[cin] * wt[co][cin];
-//					accum[co] = bm_mac(act[cin], wt[co][cin], accum[co]);
-				}
-				out_temp[co] += accum[co];
-//				out_temp[co] = bm_add(out_temp[co], accum[co], bias_gap4add[co]);
-			}
-			// write out
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				output[co][row][col] = out_temp[co];
-			}
-			if (ctrl_conv == 0) {
-				for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-					output_DDR[co][row][col] = out_temp[co];
-//					if (out_temp[co].range(1,0) > max_abs[co].range(1,0)) max_abs[co] = out_temp[co];
-				}
-			}
-		}
-	}
-}
+//void conv_3x3_grad	// revised if-else conditions
+//(
+//	float input[CHANNEL_IN_T][WIDTH][WIDTH],				// activation from DDR
+//	float weight[CHANNEL_OUT_T][WIDTH][WIDTH],				// error on-chip
+//	float output[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],		// gradient on-chip
+//	float vel[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
+//
+//	uint1 ctrl_frz,
+//
+//	int stride,
+//	int H_fmap_in
+//)
+//{
+//	int row_input;
+//	int col_input;
+//	int row_in;
+//	int col_in;
+//
+//	uint2 skip_krow = 0;
+//	uint2 skip_kcol = 0;
+//
+//	float wt;
+//	float act;
+//	float accum;
+//	float out_temp[CHANNEL_OUT_T][CHANNEL_IN_T][3][3] = {0};
+//#pragma HLS DEPENDENCE variable=out_temp inter false
+////#pragma HLS DEPENDENCE variable=output inter false
+//
+//#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
+//#pragma HLS ARRAY_PARTITION variable=out_temp dim=2 complete
+//#pragma HLS ARRAY_PARTITION variable=out_temp dim=3 complete
+//#pragma HLS ARRAY_PARTITION variable=out_temp dim=4 complete
+//
+//	float line_buffer_act[CHANNEL_IN_T][4][WIDTH] = {0};
+//	float window_buffer_act[CHANNEL_IN_T][5][5] = {0};
+//#pragma HLS ARRAY_PARTITION variable=line_buffer_act complete dim=0
+//#pragma HLS ARRAY_PARTITION variable=window_buffer_act complete dim=0
+//
+//	float line_buffer_wt[CHANNEL_IN_T][4][WIDTH] = {0};
+//	float window_buffer_wt[CHANNEL_IN_T][5][5] = {0};
+//#pragma HLS ARRAY_PARTITION variable=line_buffer_wt complete dim=0
+//#pragma HLS ARRAY_PARTITION variable=window_buffer_wt complete dim=0
+//
+//#pragma HLS ARRAY_PARTITION variable=input dim=1 complete
+//#pragma HLS ARRAY_PARTITION variable=weight dim=1 complete
+//#pragma HLS ARRAY_PARTITION variable=output dim=1 complete
+//#pragma HLS ARRAY_PARTITION variable=output dim=2 complete
+//#pragma HLS ARRAY_PARTITION variable=output dim=3 complete
+//#pragma HLS ARRAY_PARTITION variable=output dim=4 complete
+//
+//	for (int ii = 0; ii < stride; ii ++) {
+//// #pragma HLS LOOP_TRIPCOUNT min = 1 max = 2
+//		for (int krow = 0; krow < H_fmap_in + 1; krow ++) {
+//			skip_krow += 1;
+//// #pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+//			for (int jj = 0; jj < stride; jj ++) {
+//// #pragma HLS LOOP_TRIPCOUNT min = 1 max = 2
+//				for (int kcol = 0; kcol < H_fmap_in + 1; kcol ++) {
+//					skip_kcol += 1;
+//// #pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
+//#pragma HLS PIPELINE II=1
+//
+//					// dilated weight- update window buffer and line buffer
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						for (int i = 0; i < 5; i ++) {
+//							window_buffer_wt[co][i][0] = window_buffer_wt[co][i][1];
+//							window_buffer_wt[co][i][1] = window_buffer_wt[co][i][2];
+//							window_buffer_wt[co][i][2] = window_buffer_wt[co][i][3];
+//							window_buffer_wt[co][i][3] = window_buffer_wt[co][i][4];
+//						}
+//
+//						window_buffer_wt[co][0][4] = (line_buffer_wt[co][0][kcol]);
+//						window_buffer_wt[co][1][4] = (line_buffer_wt[co][0][kcol] = line_buffer_wt[co][1][kcol]);
+//						window_buffer_wt[co][2][4] = (line_buffer_wt[co][1][kcol] = line_buffer_wt[co][2][kcol]);
+//						window_buffer_wt[co][3][4] = (line_buffer_wt[co][2][kcol] = line_buffer_wt[co][3][kcol]);
+//						window_buffer_wt[co][4][4] = (line_buffer_wt[co][3][kcol]);
+//						line_buffer_wt[co][3][kcol] = ((stride > 1 && krow % 2 > 0 && kcol % 2 > 0) || krow >= WIDTH || kcol >= WIDTH) ? float(0) : weight[co][krow][kcol];
+//					}
+//
+//					// activation- update window buffer and line buffer (padding = 1)
+//					for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//						for (int i = 0; i < 5; i ++) {
+//							window_buffer_act[cin][i][0] = window_buffer_act[cin][i][1];
+//							window_buffer_act[cin][i][1] = window_buffer_act[cin][i][2];
+//							window_buffer_act[cin][i][2] = window_buffer_act[cin][i][3];
+//							window_buffer_act[cin][i][3] = window_buffer_act[cin][i][4];
+//						}
+//
+//						row_input = krow + ii*H_fmap_in;
+//						col_input = kcol + jj*H_fmap_in;
+//
+//						window_buffer_act[cin][0][4] = (line_buffer_act[cin][0][kcol]);
+//						window_buffer_act[cin][1][4] = (line_buffer_act[cin][0][kcol] = line_buffer_act[cin][1][kcol]);
+//						window_buffer_act[cin][2][4] = (line_buffer_act[cin][1][kcol] = line_buffer_act[cin][2][kcol]);
+//						window_buffer_act[cin][3][4] = (line_buffer_act[cin][2][kcol] = line_buffer_act[cin][3][kcol]);
+//						window_buffer_act[cin][4][4] = (line_buffer_act[cin][3][kcol]);
+//						line_buffer_act[cin][3][kcol] = (row_input >= WIDTH || col_input >= WIDTH) ? float(0) : input[cin][row_input][col_input];
+//					}
+//
+//					/////////////////
+//					// dilated conv_0
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//							accum = 0;
+//							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+//								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+//									wt = window_buffer_wt[co][pkrow + 1][pkcol + 1];
+//									act = window_buffer_act[cin][pkrow][pkcol];
+//									accum += wt * act;
+//								}
+//							}
+//							// conv(0, 0)
+//							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in - 1 && skip_krow == 0 && skip_kcol == 2) {
+//								out_temp[co][cin][0][0] += accum;
+////								printf("out_temp[%d][%d][0][0] = %d \n", co, cin, out_temp[co][cin][0][0].to_int());
+//							}
+//						}
+//					}
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//							accum = 0;
+//							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+//								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+//									wt = window_buffer_wt[co][pkrow + 1][pkcol + 1];
+//									act = window_buffer_act[cin][pkrow][pkcol + 1];
+//									accum += wt * act;
+//								}
+//							}
+//							// conv(0, 1)
+//							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in && skip_krow == 0 && skip_kcol == 3) {
+//								out_temp[co][cin][0][1] += accum;
+////								printf("out_temp[%d][%d][0][1] = %d \n", co, cin, out_temp[co][cin][0][1].to_int());
+//							}
+//						}
+//					}
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//							accum = 0;
+//							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+//								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+//									wt = window_buffer_wt[co][pkrow + 1][pkcol];
+//									act = window_buffer_act[cin][pkrow][pkcol + 1];
+//									accum += wt * act;
+//								}
+//							}
+//							// conv(0, 2)
+//							if (krow >= 0 && krow < H_fmap_in && kcol >= 1 && kcol < H_fmap_in + 1 && skip_krow == 0 && skip_kcol == 0) {
+//								out_temp[co][cin][0][2] += accum;
+////								printf("out_temp[%d][%d][0][2] = %d \n", co, cin, out_temp[co][cin][0][2].to_int());
+//							}
+//						}
+//					}
+//					/////////////////
+//					// dilated conv_1
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//							accum = 0;
+//							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+//								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+//									wt = window_buffer_wt[co][pkrow + 1][pkcol + 1];
+//									act = window_buffer_act[cin][pkrow + 1][pkcol];
+//									accum += wt * act;
+//								}
+//							}
+//							// conv(1, 0)
+//							if (krow >= 0 && krow < H_fmap_in + 1 && kcol >= 0 && kcol < H_fmap_in - 1 && skip_krow == 0 && skip_kcol == 2) {
+//								out_temp[co][cin][1][0] += accum;
+////								printf("out_temp[%d][%d][1][0] = %d \n", co, cin, out_temp[co][cin][1][0].to_int());
+//							}
+//						}
+//					}
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//							accum = 0;
+//							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+//								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+//									wt = window_buffer_wt[co][pkrow + 1][pkcol + 1];
+//									act = window_buffer_act[cin][pkrow + 1][pkcol + 1];
+//									accum += wt * act;
+//								}
+//							}
+//							// conv(1, 1)
+//							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in && skip_krow == 0 && skip_kcol == 3) {
+//								out_temp[co][cin][1][1] += accum;
+////								printf("out_temp[%d][%d][1][1] = %d \n", co, cin, out_temp[co][cin][1][1].to_int());
+//							}
+//						}
+//					}
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//							accum = 0;
+//							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+//								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+//									wt = window_buffer_wt[co][pkrow + 1][pkcol];
+//									act = window_buffer_act[cin][pkrow + 1][pkcol + 1];
+//									accum += wt * act;
+//								}
+//							}
+//							// conv(1, 2)
+//							if (krow >= 0 && krow < H_fmap_in && kcol >= 1 && kcol < H_fmap_in + 1 && skip_krow == 0 && skip_kcol == 0) {
+//								out_temp[co][cin][1][2] += accum;
+////								printf("out_temp[%d][%d][1][2] = %d \n", co, cin, out_temp[co][cin][1][2].to_int());
+//							}
+//						}
+//					}
+//					/////////////////
+//					// dilated conv_2
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//							accum = 0;
+//							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+//								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+//									wt = window_buffer_wt[co][pkrow][pkcol + 1];
+//									act = window_buffer_act[cin][pkrow + 1][pkcol];
+//									accum += wt * act;
+//								}
+//							}
+//							// conv(2, 0)
+//							if (krow >= 1 && krow < H_fmap_in + 1 && kcol >= 0 && kcol < H_fmap_in - 1 && skip_krow == 0 && skip_kcol == 2) {
+//								out_temp[co][cin][2][0] += accum;
+////								printf("out_temp[%d][%d][2][0] = %d \n", co, cin, out_temp[co][cin][2][0].to_int());
+//							}
+//						}
+//					}
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//							accum = 0;
+//							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+//								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+//									wt = window_buffer_wt[co][pkrow][pkcol + 1];
+//									act = window_buffer_act[cin][pkrow + 1][pkcol + 1];
+//									accum += wt * act;
+//								}
+//							}
+//							// conv(2, 1)
+//							if (krow >= 1 && krow < H_fmap_in + 1 && kcol >= 0 && kcol < H_fmap_in && skip_krow == 0 && skip_kcol == 3) {
+//								out_temp[co][cin][2][1] += accum;
+////								printf("out_temp[%d][%d][2][1] = %d \n", co, cin, out_temp[co][cin][2][1].to_int());
+//							}
+//						}
+//					}
+//					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//							accum = 0;
+//							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+//								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+//									wt = window_buffer_wt[co][pkrow][pkcol];
+//									act = window_buffer_act[cin][pkrow + 1][pkcol + 1];
+//									accum += wt * act;
+//								}
+//							}
+//							// conv(2, 2)
+//							if (krow >= 1 && krow < H_fmap_in + 1 && kcol >= 1 && kcol < H_fmap_in + 1 && skip_krow == 0 && skip_kcol == 0) {
+//								out_temp[co][cin][2][2] += accum;
+////								printf("out_temp[%d][%d][2][2] = %d \n", co, cin, out_temp[co][cin][2][2].to_int());
+//							}
+//
+//						}
+//					}
+////					printf("\n");
+//				}
+//			}
+//		}
+//	}
+//
+//	// write out
+//	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+//#pragma HLS PIPELINE II=3
+//		for (int row = 0; row < 3; row ++) {
+//			for (int col = 0; col < 3; col ++) {
+//				for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+//					if (ctrl_frz != 0) {
+////						output[co][cin][row][col] += -lr* out_temp[co][cin][row][col];
+//						vel[co][cin][row][col] = vel[co][cin][row][col]*mom + lr*out_temp[co][cin][row][col];
+//						output[co][cin][row][col] -= vel[co][cin][row][col];
+//					}
+//				}
+//			}
+//		}
+//	}
+//}
 
 void conv_3x3_grad
 (
-	float input[CHANNEL_IN_T][WIDTH][WIDTH],				// in on-chip
-	float weight[CHANNEL_OUT_T][WIDTH][WIDTH],
-	float output[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],		// out on-chip
+	float input[CHANNEL_IN_T][WIDTH][WIDTH],				// activation from DDR
+	float weight[CHANNEL_OUT_T][WIDTH][WIDTH],				// error on-chip
+	float output[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],		// gradient on-chip
+	float vel[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
 
-	int stride,
-	int H_fmap_in
-)
-{
-	float accum;
-	float weight_dil[CHANNEL_OUT_T][WIDTH][WIDTH];
-
-	// buffer init
-	for (int row_in = 0; row_in < WIDTH; row_in ++) {
-		for (int col_in = 0; col_in < WIDTH; col_in ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				weight_dil[co][row_in][col_in] = 0;
-			}
-		}
-	}
-
-	// weight dilation
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int krow = 0; krow < H_fmap_in; krow ++) {
-			for (int kcol = 0; kcol < H_fmap_in; kcol ++) {
-				weight_dil[co][krow*stride][kcol*stride] = weight[co][krow][kcol];
-			}
-		}
-	}
-
-	// conv3x3 grad
-	for (int row = 0; row < 3; row ++) {
-		for (int col = 0; col < 3; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-					accum = 0;
-					for (int krow = 0; krow < H_fmap_in*stride; krow ++) {
-						for (int kcol = 0; kcol < H_fmap_in*stride; kcol ++) {
-							int row_in = row + krow - 1;
-							int col_in = col + kcol - 1;
-							if (row_in >= 0 && row_in < H_fmap_in*stride && col_in >= 0 && col_in < H_fmap_in*stride) {
-								float act = input[ci][row_in][col_in];
-								float wt = weight_dil[co][krow][kcol];
-								accum += act * wt;
-//								if (act != 0 && wt != 0) printf("act: %f, wt: %f \n", act, wt);
-							}
-						}
-					}
-					output[co][ci][row][col] += -lr * accum;
-//					if (accum != 0) printf("weight grad [%d][%d][%d][%d]: %f \n", co, ci, row, col, accum);
-//					if (accum != 0 && abs(output[co][ci][row][col]) > 1) printf("stride: %d, updated weight [%d][%d][%d][%d]: %f \n", stride, co, ci, row, col, output[co][ci][row][col]);
-				}
-			}
-		}
-	}
-}
-
-void conv_1x1_grad
-(
-	float input[CHANNEL_IN_T][WIDTH][WIDTH],			// in on-chip
-	float weight[CHANNEL_OUT_T][WIDTH][WIDTH],
-	float output[CHANNEL_OUT_T][CHANNEL_IN_T],			// out on-chip
+	uint1 ctrl_frz,
 
 	int stride,
 	int H_fmap_in
@@ -686,20 +1002,23 @@ void conv_1x1_grad
 	float wt;
 	float act;
 	float accum;
-	static float out_temp[CHANNEL_OUT_T][CHANNEL_IN_T] = {0};
+	float out_tmp;
+	float out_temp[CHANNEL_OUT_T][CHANNEL_IN_T][3][3] = {0};
 #pragma HLS DEPENDENCE variable=out_temp inter false
-#pragma HLS DEPENDENCE variable=output inter false
+//#pragma HLS DEPENDENCE variable=output inter false
 
 #pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=out_temp dim=2 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=3 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=4 complete
 
-	static float line_buffer_act[CHANNEL_IN_T][3][WIDTH] = {0};
-	static float window_buffer_act[CHANNEL_IN_T][4][4] = {0};
+	float line_buffer_act[CHANNEL_IN_T][4][WIDTH] = {0};
+	float window_buffer_act[CHANNEL_IN_T][5][5] = {0};
 #pragma HLS ARRAY_PARTITION variable=line_buffer_act complete dim=0
 #pragma HLS ARRAY_PARTITION variable=window_buffer_act complete dim=0
 
-	static float line_buffer_wt[CHANNEL_IN_T][3][WIDTH] = {0};
-	static float window_buffer_wt[CHANNEL_IN_T][4][4] = {0};
+	float line_buffer_wt[CHANNEL_IN_T][4][WIDTH] = {0};
+	float window_buffer_wt[CHANNEL_IN_T][5][5] = {0};
 #pragma HLS ARRAY_PARTITION variable=line_buffer_wt complete dim=0
 #pragma HLS ARRAY_PARTITION variable=window_buffer_wt complete dim=0
 
@@ -707,86 +1026,255 @@ void conv_1x1_grad
 #pragma HLS ARRAY_PARTITION variable=weight dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=output dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=output dim=2 complete
-#pragma HLS ARRAY_PARTITION variable=act_bias_shift dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=output dim=3 complete
+#pragma HLS ARRAY_PARTITION variable=output dim=4 complete
 
 	for (int ii = 0; ii < stride; ii ++) {
 // #pragma HLS LOOP_TRIPCOUNT min = 1 max = 2
-		for (int krow = 0; krow < H_fmap_in; krow ++) {
+		for (int krow = 0; krow < H_fmap_in + 1; krow ++) {
 			skip_krow += 1;
 // #pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
 			for (int jj = 0; jj < stride; jj ++) {
 // #pragma HLS LOOP_TRIPCOUNT min = 1 max = 2
-				for (int kcol = 0; kcol < H_fmap_in; kcol ++) {
+				for (int kcol = 0; kcol < H_fmap_in + 1; kcol ++) {
 					skip_kcol += 1;
 // #pragma HLS LOOP_TRIPCOUNT min = 8 max = 16
 #pragma HLS PIPELINE II=1
 
-					// activation- update window buffer and line buffer
+					// dilated weight- update window buffer and line buffer
+					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+						for (int i = 0; i < 5; i ++) {
+							window_buffer_wt[co][i][0] = window_buffer_wt[co][i][1];
+							window_buffer_wt[co][i][1] = window_buffer_wt[co][i][2];
+							window_buffer_wt[co][i][2] = window_buffer_wt[co][i][3];
+							window_buffer_wt[co][i][3] = window_buffer_wt[co][i][4];
+						}
+
+						window_buffer_wt[co][0][4] = (line_buffer_wt[co][0][kcol]);
+						window_buffer_wt[co][1][4] = (line_buffer_wt[co][0][kcol] = line_buffer_wt[co][1][kcol]);
+						window_buffer_wt[co][2][4] = (line_buffer_wt[co][1][kcol] = line_buffer_wt[co][2][kcol]);
+						window_buffer_wt[co][3][4] = (line_buffer_wt[co][2][kcol] = line_buffer_wt[co][3][kcol]);
+						window_buffer_wt[co][4][4] = (line_buffer_wt[co][3][kcol]);
+						line_buffer_wt[co][3][kcol] = ((stride > 1 && krow % 2 > 0 && kcol % 2 > 0) || krow >= WIDTH || kcol >= WIDTH) ? float(0) : weight[co][krow][kcol];
+					}
+
+					// activation- update window buffer and line buffer (padding = 1)
 					for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
-						for (int i = 0; i < 4; i ++) {
+						for (int i = 0; i < 5; i ++) {
 							window_buffer_act[cin][i][0] = window_buffer_act[cin][i][1];
 							window_buffer_act[cin][i][1] = window_buffer_act[cin][i][2];
 							window_buffer_act[cin][i][2] = window_buffer_act[cin][i][3];
+							window_buffer_act[cin][i][3] = window_buffer_act[cin][i][4];
 						}
 
 						row_input = krow + ii*H_fmap_in;
 						col_input = kcol + jj*H_fmap_in;
 
-						window_buffer_act[cin][0][3] = (line_buffer_act[cin][0][kcol]);
-						window_buffer_act[cin][1][3] = (line_buffer_act[cin][0][kcol] = line_buffer_act[cin][1][kcol]);
-						window_buffer_act[cin][2][3] = (line_buffer_act[cin][1][kcol] = line_buffer_act[cin][2][kcol]);
-						window_buffer_act[cin][3][3] = (line_buffer_act[cin][2][kcol] = input[cin][row_input][col_input]);
-//						printf("skip_krow: %d, skip_kcol: %d;    input[%d][%d][%d]: %d \n", skip_krow.to_int(), skip_kcol.to_int(), cin, row_input, col_input, input[cin][row_input][col_input].to_int());
+						window_buffer_act[cin][0][4] = (line_buffer_act[cin][0][kcol]);
+						window_buffer_act[cin][1][4] = (line_buffer_act[cin][0][kcol] = line_buffer_act[cin][1][kcol]);
+						window_buffer_act[cin][2][4] = (line_buffer_act[cin][1][kcol] = line_buffer_act[cin][2][kcol]);
+						window_buffer_act[cin][3][4] = (line_buffer_act[cin][2][kcol] = line_buffer_act[cin][3][kcol]);
+						window_buffer_act[cin][4][4] = (line_buffer_act[cin][3][kcol]);
+						line_buffer_act[cin][3][kcol] = (row_input >= WIDTH || col_input >= WIDTH) ? float(0) : input[cin][row_input][col_input];
 					}
 
-					// dilated weight- update window buffer and line buffer
-					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-						for (int i = 0; i < 4; i ++) {
-							window_buffer_wt[co][i][0] = window_buffer_wt[co][i][1];
-							window_buffer_wt[co][i][1] = window_buffer_wt[co][i][2];
-							window_buffer_wt[co][i][2] = window_buffer_wt[co][i][3];
-						}
-
-						window_buffer_wt[co][0][3] = (line_buffer_wt[co][0][kcol]);
-						window_buffer_wt[co][1][3] = (line_buffer_wt[co][0][kcol] = line_buffer_wt[co][1][kcol]);
-						window_buffer_wt[co][2][3] = (line_buffer_wt[co][1][kcol] = line_buffer_wt[co][2][kcol]);
-						window_buffer_wt[co][3][3] = (line_buffer_wt[co][2][kcol]);
-						line_buffer_wt[co][2][kcol] = (stride > 1 && krow % 2 > 0 && kcol % 2 > 0) ? float(0) : weight[co][krow][kcol];
-//						printf("skip_krow: %d, skip_kcol: %d;    weight[%d][%d][%d]: %d \n", skip_krow.to_int(), skip_kcol.to_int(), co, krow, kcol, weight[co][krow][kcol].to_int());
-					}
-
-					// dilated conv
+					/////////////////
+					// dilated conv_0
 					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
-							// row_in = krow;
-							// col_in = kcol;
 							accum = 0;
+							out_tmp = 0;
+							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+									wt = window_buffer_wt[co][pkrow + 1][pkcol + 1];
+									act = window_buffer_act[cin][pkrow][pkcol];
+									accum = wt * act;
+									out_tmp += accum;
+								}
+							}
+							// conv(0, 0)
+							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in - 1 && skip_krow == 0 && skip_kcol == 2) {
+								out_temp[co][cin][0][0] += out_tmp;
+//								printf("out_temp[%d][%d][0][0] = %d \n", co, cin, out_temp[co][cin][0][0].to_int());
+							}
+						}
+					}
+					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+							accum = 0;
+							out_tmp = 0;
+							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+									wt = window_buffer_wt[co][pkrow + 1][pkcol + 1];
+									act = window_buffer_act[cin][pkrow][pkcol + 1];
+									accum = wt * act;
+									out_tmp += accum;
+								}
+							}
+							// conv(0, 1)
+							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in && skip_krow == 0 && skip_kcol == 3) {
+								out_temp[co][cin][0][1] += out_tmp;
+//								printf("out_temp[%d][%d][0][1] = %d \n", co, cin, out_temp[co][cin][0][1].to_int());
+							}
+						}
+					}
+					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+							accum = 0;
+							out_tmp = 0;
+							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+									wt = window_buffer_wt[co][pkrow + 1][pkcol];
+									act = window_buffer_act[cin][pkrow][pkcol + 1];
+									accum = wt * act;
+									out_tmp += accum;
+								}
+							}
+							// conv(0, 2)
+							if (krow >= 0 && krow < H_fmap_in && kcol >= 1 && kcol < H_fmap_in + 1 && skip_krow == 0 && skip_kcol == 0) {
+								out_temp[co][cin][0][2] += out_tmp;
+//								printf("out_temp[%d][%d][0][2] = %d \n", co, cin, out_temp[co][cin][0][2].to_int());
+							}
+						}
+					}
+					/////////////////
+					// dilated conv_1
+					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+							accum = 0;
+							out_tmp = 0;
+							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+									wt = window_buffer_wt[co][pkrow + 1][pkcol + 1];
+									act = window_buffer_act[cin][pkrow + 1][pkcol];
+									accum = wt * act;
+									out_tmp += accum;
+								}
+							}
+							// conv(1, 0)
+							if (krow >= 0 && krow < H_fmap_in + 1 && kcol >= 0 && kcol < H_fmap_in - 1 && skip_krow == 0 && skip_kcol == 2) {
+								out_temp[co][cin][1][0] += out_tmp;
+//								printf("out_temp[%d][%d][1][0] = %d \n", co, cin, out_temp[co][cin][1][0].to_int());
+							}
+						}
+					}
+					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+							accum = 0;
+							out_tmp = 0;
+							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+									wt = window_buffer_wt[co][pkrow + 1][pkcol + 1];
+									act = window_buffer_act[cin][pkrow + 1][pkcol + 1];
+									accum = wt * act;
+									out_tmp += accum;
+								}
+							}
+							// conv(1, 1)
+							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in && skip_krow == 0 && skip_kcol == 3) {
+								out_temp[co][cin][1][1] += out_tmp;
+//								printf("out_temp[%d][%d][1][1] = %d \n", co, cin, out_temp[co][cin][1][1].to_int());
+							}
+						}
+					}
+					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+							accum = 0;
+							out_tmp = 0;
+							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+									wt = window_buffer_wt[co][pkrow + 1][pkcol];
+									act = window_buffer_act[cin][pkrow + 1][pkcol + 1];
+									accum = wt * act;
+									out_tmp += accum;
+								}
+							}
+							// conv(1, 2)
+							if (krow >= 0 && krow < H_fmap_in && kcol >= 1 && kcol < H_fmap_in + 1 && skip_krow == 0 && skip_kcol == 0) {
+								out_temp[co][cin][1][2] += out_tmp;
+//								printf("out_temp[%d][%d][1][2] = %d \n", co, cin, out_temp[co][cin][1][2].to_int());
+							}
+						}
+					}
+					/////////////////
+					// dilated conv_2
+					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+							accum = 0;
+							out_tmp = 0;
+							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+									wt = window_buffer_wt[co][pkrow][pkcol + 1];
+									act = window_buffer_act[cin][pkrow + 1][pkcol];
+									accum = wt * act;
+									out_tmp += accum;
+								}
+							}
+							// conv(2, 0)
+							if (krow >= 1 && krow < H_fmap_in + 1 && kcol >= 0 && kcol < H_fmap_in - 1 && skip_krow == 0 && skip_kcol == 2) {
+								out_temp[co][cin][2][0] += out_tmp;
+//								printf("out_temp[%d][%d][2][0] = %d \n", co, cin, out_temp[co][cin][2][0].to_int());
+							}
+						}
+					}
+					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+							accum = 0;
+							out_tmp = 0;
+							for (int pkrow = 0; pkrow < 4; pkrow ++) {
+								for (int pkcol = 0; pkcol < 4; pkcol ++) {
+									wt = window_buffer_wt[co][pkrow][pkcol + 1];
+									act = window_buffer_act[cin][pkrow + 1][pkcol + 1];
+									accum = wt * act;
+									out_tmp += accum;
+								}
+							}
+							// conv(2, 1)
+							if (krow >= 1 && krow < H_fmap_in + 1 && kcol >= 0 && kcol < H_fmap_in && skip_krow == 0 && skip_kcol == 3) {
+								out_temp[co][cin][2][1] += out_tmp;
+//								printf("out_temp[%d][%d][2][1] = %d \n", co, cin, out_temp[co][cin][2][1].to_int());
+							}
+						}
+					}
+					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+							accum = 0;
+							out_tmp = 0;
 							for (int pkrow = 0; pkrow < 4; pkrow ++) {
 								for (int pkcol = 0; pkcol < 4; pkcol ++) {
 									wt = window_buffer_wt[co][pkrow][pkcol];
-									act = window_buffer_act[cin][pkrow][pkcol];
-									accum += wt * act;
-
-									// printf("skip_krow = %d, skip_kcol = %d, ", skip_krow.to_int(), skip_kcol.to_int());
-									// printf("accum = %d \n", accum.to_int());
+									act = window_buffer_act[cin][pkrow + 1][pkcol + 1];
+									accum = wt * act;
+									out_tmp += accum;
 								}
 							}
-							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in && skip_krow == 0 && skip_kcol == 0) {
-								out_temp[co][cin] += accum;
-//								printf("skip_krow = %d, skip_kcol = %d, ", skip_krow.to_int(), skip_kcol.to_int());
-								// printf("out_temp[%d][%d] = %d \n", co, cin, out_temp[co][cin].to_int());
+							// conv(2, 2)
+							if (krow >= 1 && krow < H_fmap_in + 1 && kcol >= 1 && kcol < H_fmap_in + 1 && skip_krow == 0 && skip_kcol == 0) {
+								out_temp[co][cin][2][2] += out_tmp;
+//								printf("out_temp[%d][%d][2][2] = %d \n", co, cin, out_temp[co][cin][2][2].to_int());
 							}
+
 						}
 					}
+//					printf("\n");
 				}
 			}
 		}
 	}
+
 	// write out
 	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-#pragma HLS PIPELINE II=2
-		for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
-			output[co][cin] += -lr * out_temp[co][cin];
+#pragma HLS PIPELINE II=3
+		for (int row = 0; row < 3; row ++) {
+			for (int col = 0; col < 3; col ++) {
+				for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+					if (ctrl_frz != 0) {
+//						output[co][cin][row][col] += -lr* out_temp[co][cin][row][col];
+						vel[co][cin][row][col] = vel[co][cin][row][col]*mom + lr*out_temp[co][cin][row][col];
+						output[co][cin][row][col] -= vel[co][cin][row][col];
+					}
+				}
+			}
 		}
 	}
 }
@@ -836,6 +1324,7 @@ void FC(
 	float inputs[64],
 	float inputs_FW[64],
 	float linear_weight[10][64],
+	float linear_bias[10],
 	float outputs[10],
 
 	uint1 ctrl_fc	// 0 for forward and 1 for backward
@@ -847,7 +1336,7 @@ void FC(
 	if (ctrl_fc == 0) {
 		// buffer init
 		for (int coo = 0; coo < 10; coo ++) {
-			outputs[coo] = 0;
+			outputs[coo] = linear_bias[coo];
 		}
 		for (int coo = 0; coo < 10; coo ++) {
 			for (int cii = 0; cii < 64; cii++) {
@@ -874,9 +1363,13 @@ void FC(
 				linear_weight[coo][cii] += -lr * inputs_FW[cii] * outputs[coo];
 			}
 		}
+		for (int coo = 0; coo < 10; coo ++) {
+			linear_bias[coo] += -lr * outputs[coo];
+		}
 	}
 }
 
+/*
 // bn_relu
 void bn_relu(
 	float bn_inputs[CHANNEL_OUT_T][WIDTH][WIDTH],		// in
@@ -1106,6 +1599,174 @@ void bn_relu_bp(
 #pragma HLS PIPELINE II=1
 		bn_bias[c] += -lr * g_bn_bias[c];
 		bn_wt[c] += -lr * g_bn_wt[c];
+	}
+}
+*/
+
+// bn_relu
+void bn_relu(
+	float bn_inputs[CHANNEL_OUT_T][WIDTH][WIDTH],		// in
+	float out_buf[CHANNEL_OUT_T][WIDTH][WIDTH],			// out, bn_outputs
+
+	float out_buf_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, off-chip for backprop
+	uint1 relu_mask[CHANNEL_OUT_T][WIDTH][WIDTH],		// out, relu_mask for relu_bp
+//	float out_buf_SC[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, ideneity for shortcut
+
+	float bn_wt[CHANNEL_OUT_T],
+	float bn_bias[CHANNEL_OUT_T],
+
+    int H_fmap_in,
+//	uint1 ctrl_bn_id,
+
+//	float shared_exp_bias[CHANNEL_OUT_T],
+	float bias_gap4add[CHANNEL_OUT_T]
+//	float act_bias_shift[CHANNEL_OUT_T]
+)
+{
+	int N = H_fmap_in * H_fmap_in;
+	float mu[CHANNEL_OUT_T];
+	float std_var[CHANNEL_OUT_T];
+	float sum[CHANNEL_OUT_T] = {0};
+	// mean
+	for (int row = 0; row < H_fmap_in; row ++) {
+		for (int col = 0; col < H_fmap_in; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+				sum[c] += bn_inputs[c][row][col];
+			}
+		}
+	}
+	for (int row = 0; row < H_fmap_in; row ++) {
+		for (int col = 0; col < H_fmap_in; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+				mu[c] = sum[c]/N;
+			}
+		}
+	}
+
+	// std_var
+	for (int row = 0; row < H_fmap_in; row ++) {
+		for (int col = 0; col < H_fmap_in; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+				std_var[c] += (bn_inputs[c][row][col]-mu[c])*(bn_inputs[c][row][col]-mu[c])/N;	// var
+			}
+		}
+	}
+	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+		std_var[c] = hls::sqrt(std_var[c]);
+	}
+
+	// bn_relu
+	for (int row = 0; row < H_fmap_in; row ++) {
+		for (int col = 0; col < H_fmap_in; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+				out_buf[c][row][col] = bn_wt[c]*(bn_inputs[c][row][col]-mu[c])/(std_var[c] + eps) + bn_bias[c];
+				relu_mask[c][row][col] = (out_buf[c][row][col] > 0) ? 1 : 0;
+			}
+			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+				out_buf[c][row][col] = (relu_mask[c][row][col] == 1) ? out_buf[c][row][col] : float(0);
+				out_buf_DDR[c][row][col] = out_buf[c][row][col];
+			}
+		}
+	}
+}
+
+void bn_relu_bp(
+	float error[CHANNEL_OUT_T][WIDTH][WIDTH], 			// in
+	float bn_inputs_fw[CHANNEL_OUT_T][WIDTH][WIDTH],	// in
+	uint1 relu_mask[CHANNEL_OUT_T][WIDTH][WIDTH],		// in
+	float out_buf[CHANNEL_OUT_T][WIDTH][WIDTH],			// out, error_bn
+
+	float bn_wt[CHANNEL_OUT_T],
+	float bn_bias[CHANNEL_OUT_T],
+	float vel_wt[CHANNEL_OUT_T],
+	float vel_bias[CHANNEL_OUT_T],
+
+	uint1 ctrl_frz,
+
+	int H_fmap_in,
+	float bias_gap4add[CHANNEL_OUT_T]
+)
+{
+	int N = H_fmap_in * H_fmap_in;
+	float mu[CHANNEL_OUT_T];
+	float std_var[CHANNEL_OUT_T] = {0};
+	float sum[CHANNEL_OUT_T] = {0};
+	float g_bn_wt[CHANNEL_OUT_T] = {0};					// out
+	float g_bn_bias[CHANNEL_OUT_T] = {0};				// out
+
+	// temp buffer init
+	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+		std_var[c] = 0;
+		sum[c] = 0;
+		g_bn_bias[c] = 0;
+		g_bn_wt[c] = 0;
+	}
+
+	// relu_bp
+	for (int row = 0; row < H_fmap_in; row ++) {
+		for (int col = 0; col < H_fmap_in; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+				error[c][row][col] = (relu_mask[c][row][col] == 1) ? error[c][row][col] : float(0);
+			}
+		}
+	}
+
+	// mean
+	for (int row = 0; row < H_fmap_in; row ++) {
+		for (int col = 0; col < H_fmap_in; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+				sum[c] += bn_inputs_fw[c][row][col];
+			}
+		}
+	}
+	for (int row = 0; row < H_fmap_in; row ++) {
+		for (int col = 0; col < H_fmap_in; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+				mu[c] = sum[c]/N;
+			}
+		}
+	}
+
+	// std_var
+	for (int row = 0; row < H_fmap_in; row ++) {
+		for (int col = 0; col < H_fmap_in; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+				std_var[c] += (bn_inputs_fw[c][row][col]-mu[c])*(bn_inputs_fw[c][row][col]-mu[c])/N;	// var
+			}
+		}
+	}
+	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+		std_var[c] = hls::sqrt(std_var[c]);
+	}
+
+	// grad of bn params
+	for (int row = 0; row < H_fmap_in; row ++) {
+		for (int col = 0; col < H_fmap_in; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+				g_bn_bias[c] += error[c][row][col];
+				g_bn_wt[c] += error[c][row][col] * (bn_inputs_fw[c][row][col]-mu[c])/(std_var[c]+eps);
+			}
+		}
+	}
+
+	// bn_bp
+	for (int row = 0; row < H_fmap_in; row ++) {
+		for (int col = 0; col < H_fmap_in; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+				out_buf[c][row][col] = bn_wt[c]*error[c][row][col]/(std_var[c]+eps) - bn_wt[c]*g_bn_bias[c]/(N*(std_var[c]+eps)) - bn_wt[c]*(bn_inputs_fw[c][row][col]-mu[c])*g_bn_wt[c]/(N*(std_var[c]*std_var[c]+eps));
+			}
+		}
+	}
+
+	if (ctrl_frz != 0) {
+		// bn_sw params update
+		for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+			vel_wt[c] = vel_wt[c]*mom + lr * g_bn_wt[c];
+			bn_wt[c] -= vel_wt[c];
+
+			vel_bias[c] = vel_bias[c]*mom + lr * g_bn_bias[c];
+			bn_bias[c] -= vel_bias[c];
+		}
 	}
 }
 
