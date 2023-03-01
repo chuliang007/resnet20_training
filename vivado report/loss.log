@@ -1,7 +1,7 @@
 INFO: [SIM 2] *************** CSIM start ***************
 INFO: [SIM 4] CSIM will launch GCC as the compiler.
-   Compiling ../../../../../Users/chuli/Desktop/Xillinx_Project/on_board_training_v3/batch_1/tb.cc in debug mode
-   Compiling ../../../../../Users/chuli/Desktop/Xillinx_Project/on_board_training_v3/batch_1/resnet20.cc in debug mode
+   Compiling ../../../../../Users/xxx/Desktop/Xillinx_Project/on_board_training_v3/batch_1/tb.cc in debug mode
+   Compiling ../../../../../Users/xxx/Desktop/Xillinx_Project/on_board_training_v3/batch_1/resnet20.cc in debug mode
    Generating csim.exe
 --------------- iteration 1 ---------------
 loss_sw: 3.32193
