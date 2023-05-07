@@ -68,8 +68,8 @@ void FracNet_T(
 
 #pragma HLS ALLOCATION function instances=conv_3x3 limit=1
 #pragma HLS ALLOCATION function instances=conv_1x1 limit=1
-#pragma HLS ALLOCATION function instances=conv_3x3_grad limit=1
-#pragma HLS ALLOCATION function instances=conv_1x1_grad limit=1
+#pragma HLS ALLOCATION function instances=conv_3x3_backward limit=1
+#pragma HLS ALLOCATION function instances=conv_1x1_backward limit=1
 
 	int H_fmap_in, H_fmap_out, in_channels, out_channels, in_channels_after_pack, out_channels_after_pack;
     int stride, conv_3x3_weight_ptr, conv_1x1_weight_ptr, fc_weight_ptr, ini, ini_copy, ini_act_bias, ini_wt_bias;
