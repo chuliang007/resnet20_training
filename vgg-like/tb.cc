@@ -16,19 +16,19 @@ unsigned char images[EPOCH*3*32*32];
 unsigned char labels[EPOCH];
 
 //const uint2 exp_bias = 2;	// ieee-754 shared_exp_bias
-float lr_sw = 0.02; //1e-2;
+float lr_sw = 0.015; //0.02; //1e-2;
 float eps_sw = 1e-10;
 float mom_sw = 0.9;
 
-#define CHANNEL_IN_T 8
-#define CHANNEL_OUT_T 8
-#define WIDTH 32
+#define CHANNEL_IN_T_HW 8
+#define CHANNEL_OUT_T_HW 8
+#define WIDTH_HW 33
 
-#define NUM_3x3_WT 41
-#define NUM_ACT 41
-#define ACT_BIAS 64/CHANNEL_IN_T
-#define WT_BIAS (NUM_3x3_WT)/CHANNEL_OUT_T      // 8*8*3*3
-#define NUM_TILE 64/CHANNEL_OUT_T
+//#define NUM_3x3_WT 41
+//#define NUM_ACT 41
+//#define ACT_BIAS 64/CHANNEL_IN_T_HW
+//#define WT_BIAS (NUM_3x3_WT)/CHANNEL_OUT_T_HW      // 8*8*3*3
+//#define NUM_TILE 64/CHANNEL_OUT_T_HW
 
 //--------------------------------
 // floating-point golden reference
@@ -479,8 +479,8 @@ void bn_sw(
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
-	float mu[in_channels_hw];
-	float std_var[in_channels_hw];
+	float mu[in_channels_hw] = {0};
+	float std_var[in_channels_hw] = {0};
 	float sum_sw[in_channels_hw] = {0};
 	// mean
 	for (int row = 0; row < H_fmap_in_hw; row ++) {
@@ -532,8 +532,8 @@ void bn_relu_sw(
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
-	float mu[in_channels_hw];
-	float std_var[in_channels_hw];
+	float mu[in_channels_hw] = {0};
+	float std_var[in_channels_hw] = {0};
 	float sum_sw[in_channels_hw] = {0};
 	// mean
 	for (int row = 0; row < H_fmap_in_hw; row ++) {
@@ -595,8 +595,8 @@ void bn_bp_sw(
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
-	float mu[in_channels_hw];
-	float std_var[in_channels_hw];
+	float mu[in_channels_hw] = {0};
+	float std_var[in_channels_hw] = {0};
 	float sum_sw[in_channels_hw] = {0};
 	float g_bn_wt_hw[in_channels_hw] = {0};							// out
 	float g_bn_bias_hw[in_channels_hw] = {0};						// out
@@ -678,8 +678,8 @@ void bn_relu_bp_sw(
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
-	float mu[in_channels_hw];
-	float std_var[in_channels_hw];
+	float mu[in_channels_hw] = {0};
+	float std_var[in_channels_hw] = {0};
 	float sum_sw[in_channels_hw] = {0};
 	float g_bn_wt_hw[in_channels_hw] = {0};							// out
 	float g_bn_bias_hw[in_channels_hw] = {0};						// out
@@ -865,17 +865,17 @@ void shortcut_sw(
 // floating-point golden reference
 //--------------------------------
 
-float msb_fmap_tile_buffer_0_hw[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error_hw on-chip
-float msb_fmap_tile_buffer_1_hw[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error_hw on-chip
-float msb_fmap_tile_buffer_s2_hw[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error_hw on-chip
+float msb_fmap_tile_buffer_0_hw[NUM_TILE][CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW];	// activation/error_hw on-chip
+float msb_fmap_tile_buffer_1_hw[NUM_TILE][CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW];	// activation/error_hw on-chip
+float msb_fmap_tile_buffer_s2_hw[NUM_TILE][CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW];	// activation/error_hw on-chip
 
-float out_buf_t0_hw[NUM_ACT][CHANNEL_OUT_T][WIDTH][WIDTH];				// conv output
-float out_buf_t1_hw[NUM_ACT][CHANNEL_OUT_T][WIDTH][WIDTH];				// generic_bn_hw output
-uint1 relu_mask_hw[NUM_ACT][CHANNEL_OUT_T][WIDTH][WIDTH];				// relu mask for backprop
+float out_buf_t0_hw[NUM_ACT][CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW];				// conv output
+float out_buf_t1_hw[NUM_ACT][CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW];				// generic_bn_hw output
+uint1 relu_mask_hw[NUM_ACT][CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW];				// relu mask for backprop
 
-//float conv_3x3_weight_tile_buffer_hw[NUM_3x3_WT][CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
-//float conv_1x1_weight_tile_buffer_hw[NUM_1x1_WT][CHANNEL_OUT_T][CHANNEL_IN_T];
-float conv_3x3_weight_rot_hw[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
+//float conv_3x3_weight_tile_buffer_hw[NUM_3x3_WT][CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW][3][3];
+//float conv_1x1_weight_tile_buffer_hw[NUM_1x1_WT][CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW];
+float conv_3x3_weight_rot_hw[CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW][3][3];
 
 float pool_out_buf_hw[64];
 float pool_out_buf_copy_hw[64];	// generic_avgpool_hw buffer
@@ -885,7 +885,7 @@ float linear_out_buf_hw[10];											// generic_FC_hw buffer
 float sum_hw;
 float loss_hw = 0;
 float error_hw[10];
-float bias_gap4add_hw[CHANNEL_OUT_T];									// shared exponent gap between act & wt in bm addition
+float bias_gap4add_hw[CHANNEL_OUT_T_HW];									// shared exponent gap between act & wt in bm addition
 
 //--------------------------------
 // floating-point golden reference
@@ -893,17 +893,17 @@ float bias_gap4add_hw[CHANNEL_OUT_T];									// shared exponent gap between act
 
 void rot180_3x3_hw
 (
-	float weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	float weight_rot[CHANNEL_IN_T][CHANNEL_OUT_T][3][3]
+	float weight[CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW][3][3],
+	float weight_rot[CHANNEL_IN_T_HW][CHANNEL_OUT_T_HW][3][3]
 )
 {
 	float act;
 	float wt;
-	float weight_tmp[CHANNEL_IN_T][CHANNEL_OUT_T][3][3];
+	float weight_tmp[CHANNEL_IN_T_HW][CHANNEL_OUT_T_HW][3][3];
 
 	// transpose
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+	for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
+		for (int cin = 0; cin < CHANNEL_IN_T_HW; cin ++) {
 			for (int krow = 0; krow < 3; krow ++) {
 				for (int kcol = 0; kcol < 3; kcol ++) {
 					weight_tmp[cin][co][kcol][krow] = weight[co][cin][krow][kcol];
@@ -912,15 +912,15 @@ void rot180_3x3_hw
 		}
 	}
 	// diagonal
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+	for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
+		for (int cin = 0; cin < CHANNEL_IN_T_HW; cin ++) {
 			weight_tmp[cin][co][0][0] = weight[cin][co][2][2];
 			weight_tmp[cin][co][2][2] = weight[cin][co][0][0];
 		}
 	}
 	// write back
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+	for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
+		for (int cin = 0; cin < CHANNEL_IN_T_HW; cin ++) {
 			for (int krow = 0; krow < 3; krow ++) {
 				for (int kcol = 0; kcol < 3; kcol ++) {
 					weight_rot[cin][co][krow][kcol] = weight_tmp[cin][co][krow][kcol];
@@ -932,16 +932,16 @@ void rot180_3x3_hw
 
 void rot180_1x1_hw
 (
-	float weight[CHANNEL_OUT_T][CHANNEL_IN_T],
-	float weight_rot[CHANNEL_IN_T][CHANNEL_OUT_T]
+	float weight[CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW],
+	float weight_rot[CHANNEL_IN_T_HW][CHANNEL_OUT_T_HW]
 )
 {
 	float act;
 	float wt;
 
 	// rotate 180
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+	for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
+		for (int cin = 0; cin < CHANNEL_IN_T_HW; cin ++) {
 			weight_rot[cin][co] = weight[co][cin];
 		}
 	}
@@ -949,10 +949,10 @@ void rot180_1x1_hw
 
 void generic_conv_3x3_hw
 (
-	float input[CHANNEL_IN_T][WIDTH][WIDTH],			// in on-chip
-	float weight[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
-	float output[CHANNEL_OUT_T][WIDTH][WIDTH],			// out on-chip
-	float output_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],
+	float input[CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW],			// in on-chip
+	float weight[CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW][3][3],
+	float output[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],			// out on-chip
+	float output_DDR[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],
 
 	int stride,
 	int H_fmap_in,
@@ -960,17 +960,17 @@ void generic_conv_3x3_hw
 	int c_in,
 	uint1 ctrl_conv,
 
-	float bias_gap4add[CHANNEL_OUT_T]
+	float bias_gap4add[CHANNEL_OUT_T_HW]
 )
 {
 	float act;
 	float wt;
-	float out_temp[CHANNEL_OUT_T][WIDTH][WIDTH];
+	float out_temp[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW];
 
 	// buffer initiation
 	for (int row = 0; row < H_fmap_out; row ++) {
 		for (int col = 0; col < H_fmap_out; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
 				if (c_in > 0) {
 					out_temp[co][row][col] = output[co][row][col];
 				}
@@ -984,11 +984,11 @@ void generic_conv_3x3_hw
 	// conv 3x3
 	for (int row = 0; row < H_fmap_out; row ++) {
 		for (int col = 0; col < H_fmap_out; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
 				float accum = 0;
 				for (int krow = 0; krow < 3; krow ++) {
 					for (int kcol = 0; kcol < 3; kcol ++) {
-						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+						for (int cin = 0; cin < CHANNEL_IN_T_HW; cin ++) {
 							int row_in = row*stride + krow - 1;
 							int col_in = col*stride + kcol - 1;
 							if (row_in >= 0 && row_in < H_fmap_in && col_in >= 0 && col_in < H_fmap_in) {
@@ -1011,10 +1011,10 @@ void generic_conv_3x3_hw
 
 void generic_deconv_3x3_hw
 (
-	float input[CHANNEL_IN_T][WIDTH][WIDTH],			// in on-chip
-	float weight[CHANNEL_IN_T][CHANNEL_OUT_T][3][3],
-	float output[CHANNEL_OUT_T][WIDTH][WIDTH],			// out on-chip
-	float output_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],
+	float input[CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW],			// in on-chip
+	float weight[CHANNEL_IN_T_HW][CHANNEL_OUT_T_HW][3][3],
+	float output[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],			// out on-chip
+	float output_DDR[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],
 
 	int stride,
 	int H_fmap_in,
@@ -1022,18 +1022,18 @@ void generic_deconv_3x3_hw
 	int c_in,
 	uint1 ctrl_conv,
 
-	float bias_gap4add[CHANNEL_OUT_T]
+	float bias_gap4add[CHANNEL_OUT_T_HW]
 )
 {
 	float act;
 	float wt;
-	float input_dil[CHANNEL_IN_T][WIDTH][WIDTH];
-	float out_temp[CHANNEL_OUT_T][WIDTH][WIDTH];
+	float input_dil[CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW];
+	float out_temp[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW];
 
 	// buffer init
-	for (int row_in = 0; row_in < WIDTH; row_in ++) {
-		for (int col_in = 0; col_in < WIDTH; col_in ++) {
-			for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+	for (int row_in = 0; row_in < WIDTH_HW; row_in ++) {
+		for (int col_in = 0; col_in < WIDTH_HW; col_in ++) {
+			for (int cin = 0; cin < CHANNEL_IN_T_HW; cin ++) {
 				input_dil[cin][row_in][col_in] = 0;
 			}
 		}
@@ -1042,7 +1042,7 @@ void generic_deconv_3x3_hw
 	// input dilation
 	for (int row_in = 0; row_in < H_fmap_in; row_in ++) {
 		for (int col_in = 0; col_in < H_fmap_in; col_in ++) {
-			for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+			for (int cin = 0; cin < CHANNEL_IN_T_HW; cin ++) {
 				input_dil[cin][row_in*stride][col_in*stride] = input[cin][row_in][col_in];
 			}
 		}
@@ -1051,7 +1051,7 @@ void generic_deconv_3x3_hw
 	// buffer initiation
 	for (int row = 0; row < H_fmap_out; row ++) {
 		for (int col = 0; col < H_fmap_out; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
 				if (c_in > 0) {
 					out_temp[co][row][col] = output[co][row][col];
 				}
@@ -1065,11 +1065,11 @@ void generic_deconv_3x3_hw
 	// conv 3x3
 	for (int row = 0; row < H_fmap_out; row ++) {
 		for (int col = 0; col < H_fmap_out; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
 				float accum = 0;
 				for (int krow = 0; krow < 3; krow ++) {
 					for (int kcol = 0; kcol < 3; kcol ++) {
-						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+						for (int cin = 0; cin < CHANNEL_IN_T_HW; cin ++) {
 							int row_in = row + krow - 1;
 							int col_in = col + kcol - 1;
 							if (row_in >= 0 && row_in < H_fmap_in && col_in >= 0 && col_in < H_fmap_in) {
@@ -1091,10 +1091,10 @@ void generic_deconv_3x3_hw
 
 void generic_conv_1x1_hw
 (
-	float input[CHANNEL_IN_T][WIDTH][WIDTH],			// in on-chip
-	float weight[CHANNEL_OUT_T][CHANNEL_IN_T],
-	float output[CHANNEL_OUT_T][WIDTH][WIDTH],			// out on-chip
-	float output_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],
+	float input[CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW],			// in on-chip
+	float weight[CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW],
+	float output[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],			// out on-chip
+	float output_DDR[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],
 
 	int stride,
 	int H_fmap_in,
@@ -1102,17 +1102,17 @@ void generic_conv_1x1_hw
 	int c_in,
 	uint1 ctrl_conv,
 
-	float bias_gap4add[CHANNEL_OUT_T]
+	float bias_gap4add[CHANNEL_OUT_T_HW]
 )
 {
 	float act;
 	float wt;
-	float out_temp[CHANNEL_OUT_T][WIDTH][WIDTH];
+	float out_temp[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW];
 
 	// buffer initiation
 	for (int row = 0; row < H_fmap_out; row ++) {
 		for (int col = 0; col < H_fmap_out; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
 				if (c_in > 0) {
 					out_temp[co][row][col] = output[co][row][col];
 				}
@@ -1125,9 +1125,9 @@ void generic_conv_1x1_hw
 	// conv 1x1
 	for (int row = 0; row < H_fmap_out; row ++) {
 		for (int col = 0; col < H_fmap_out; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
 				float accum = 0;
-				for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+				for (int ci = 0; ci < CHANNEL_IN_T_HW; ci ++) {
 					int row_in = row * stride;
 					int col_in = row * stride;
 					if (row_in >= 0 && row_in < H_fmap_in && col_in >= 0 && col_in < H_fmap_in) {
@@ -1147,10 +1147,10 @@ void generic_conv_1x1_hw
 
 void generic_deconv_1x1_hw
 (
-	float input[CHANNEL_IN_T][WIDTH][WIDTH],			// in on-chip
-	float weight[CHANNEL_OUT_T][CHANNEL_IN_T],
-	float output[CHANNEL_OUT_T][WIDTH][WIDTH],			// out on-chip
-	float output_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],
+	float input[CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW],			// in on-chip
+	float weight[CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW],
+	float output[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],			// out on-chip
+	float output_DDR[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],
 
 	int stride,
 	int H_fmap_in,
@@ -1158,18 +1158,18 @@ void generic_deconv_1x1_hw
 	int c_in,
 	uint1 ctrl_conv,
 
-	float bias_gap4add[CHANNEL_OUT_T]
+	float bias_gap4add[CHANNEL_OUT_T_HW]
 )
 {
 	float act;
 	float wt;
-	float input_dil[CHANNEL_IN_T][WIDTH][WIDTH];
-	float out_temp[CHANNEL_OUT_T][WIDTH][WIDTH];
+	float input_dil[CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW];
+	float out_temp[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW];
 
 	// buffer init
-	for (int row_in = 0; row_in < WIDTH; row_in ++) {
-		for (int col_in = 0; col_in < WIDTH; col_in ++) {
-			for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+	for (int row_in = 0; row_in < WIDTH_HW; row_in ++) {
+		for (int col_in = 0; col_in < WIDTH_HW; col_in ++) {
+			for (int cin = 0; cin < CHANNEL_IN_T_HW; cin ++) {
 				input_dil[cin][row_in][col_in] = 0;
 			}
 		}
@@ -1178,7 +1178,7 @@ void generic_deconv_1x1_hw
 	// input dilation
 	for (int row_in = 0; row_in < H_fmap_in; row_in ++) {
 		for (int col_in = 0; col_in < H_fmap_in; col_in ++) {
-			for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
+			for (int cin = 0; cin < CHANNEL_IN_T_HW; cin ++) {
 				input_dil[cin][row_in*stride][col_in*stride] = input[cin][row_in][col_in];
 			}
 		}
@@ -1187,7 +1187,7 @@ void generic_deconv_1x1_hw
 	// buffer initiation
 	for (int row = 0; row < H_fmap_out; row ++) {
 		for (int col = 0; col < H_fmap_out; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
 				if (c_in > 0) {
 					out_temp[co][row][col] = output[co][row][col];
 				}
@@ -1200,9 +1200,9 @@ void generic_deconv_1x1_hw
 	// conv 1x1
 	for (int row = 0; row < H_fmap_out; row ++) {
 		for (int col = 0; col < H_fmap_out; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+			for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
 				float accum = 0;
-				for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+				for (int ci = 0; ci < CHANNEL_IN_T_HW; ci ++) {
 					int row_in = row;
 					int col_in = col;
 					if (row_in >= 0 && row_in < H_fmap_in && col_in >= 0 && col_in < H_fmap_in) {
@@ -1222,30 +1222,33 @@ void generic_deconv_1x1_hw
 
 void generic_conv_3x3_grad_hw
 (
-	float input[CHANNEL_IN_T][WIDTH][WIDTH],				// in on-chip
-	float weight[CHANNEL_OUT_T][WIDTH][WIDTH],
-	float output[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],		// out on-chip
-	int stride,
-	int H_fmap_in
+	float input[CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW],			// in on-chip
+	float weight[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],
+
+	float output[CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW][3][3],		// out on-chip
+	float vel[CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW][3][3],			// out on-chip
+
+	int stride_hw,
+	int H_fmap_in_hw
 )
 {
 	float accum;
-	float weight_dil[CHANNEL_OUT_T][WIDTH][WIDTH];
+	float weight_dil[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW];
 
 	// buffer init
-	for (int row_in = 0; row_in < WIDTH; row_in ++) {
-		for (int col_in = 0; col_in < WIDTH; col_in ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+	for (int row_in = 0; row_in < WIDTH_HW; row_in ++) {
+		for (int col_in = 0; col_in < WIDTH_HW; col_in ++) {
+			for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
 				weight_dil[co][row_in][col_in] = 0;
 			}
 		}
 	}
 
 	// weight dilation
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int krow = 0; krow < H_fmap_in; krow ++) {
-			for (int kcol = 0; kcol < H_fmap_in; kcol ++) {
-				weight_dil[co][krow*stride][kcol*stride] = weight[co][krow][kcol];
+	for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
+		for (int krow = 0; krow < H_fmap_in_hw; krow ++) {
+			for (int kcol = 0; kcol < H_fmap_in_hw; kcol ++) {
+				weight_dil[co][krow*stride_hw][kcol*stride_hw] = weight[co][krow][kcol];
 			}
 		}
 	}
@@ -1253,22 +1256,23 @@ void generic_conv_3x3_grad_hw
 	// conv3x3 grad
 	for (int row = 0; row < 3; row ++) {
 		for (int col = 0; col < 3; col ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-				for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+			for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
+				for (int ci = 0; ci < CHANNEL_IN_T_HW; ci ++) {
 					accum = 0;
-					for (int krow = 0; krow < H_fmap_in*stride; krow ++) {
-						for (int kcol = 0; kcol < H_fmap_in*stride; kcol ++) {
+					for (int krow = 0; krow < H_fmap_in_hw*stride_hw; krow ++) {
+						for (int kcol = 0; kcol < H_fmap_in_hw*stride_hw; kcol ++) {
 							int row_in = row + krow - 1;
 							int col_in = col + kcol - 1;
-							if (row_in >= 0 && row_in < H_fmap_in*stride && col_in >= 0 && col_in < H_fmap_in*stride) {
+							if (row_in >= 0 && row_in < H_fmap_in_hw*stride_hw && col_in >= 0 && col_in < H_fmap_in_hw*stride_hw) {
 								float act = input[ci][row_in][col_in];
 								float wt = weight_dil[co][krow][kcol];
 								accum += act * wt;
-//								if (act != 0 && wt != 0) printf("act: %f, wt: %f \n", act, wt);
 							}
 						}
 					}
-					output[co][ci][row][col] += -lr_sw * accum;
+					// output[co][ci][row][col] += -lr_sw * accum;
+					vel[co][ci][row][col] = vel[co][ci][row][col]*mom_sw + lr_sw*accum;
+					output[co][ci][row][col] -= vel[co][ci][row][col];
 				}
 			}
 		}
@@ -1277,65 +1281,68 @@ void generic_conv_3x3_grad_hw
 
 void generic_conv_1x1_grad_hw
 (
-	float input[CHANNEL_IN_T][WIDTH][WIDTH],			// in on-chip
-	float weight[CHANNEL_OUT_T][WIDTH][WIDTH],
-	float output[CHANNEL_OUT_T][CHANNEL_IN_T],			// out on-chip
+	float input[CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW],			// in on-chip
+	float weight[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],
+	float output[CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW],			// out on-chip
+	float vel[CHANNEL_OUT_T_HW][CHANNEL_IN_T_HW],			// out on-chip
 
-	int stride,
-	int H_fmap_in
+	int stride_hw,
+	int H_fmap_in_hw
 )
 {
 	float accum;
-	float weight_dil[CHANNEL_OUT_T][WIDTH][WIDTH];
+	float weight_dil[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW];
 
 	// buffer init
-	for (int row_in = 0; row_in < WIDTH; row_in ++) {
-		for (int col_in = 0; col_in < WIDTH; col_in ++) {
-			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+	for (int row_in = 0; row_in < WIDTH_HW; row_in ++) {
+		for (int col_in = 0; col_in < WIDTH_HW; col_in ++) {
+			for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
 				weight_dil[co][row_in][col_in] = 0;
 			}
 		}
 	}
 
 	// weight dilation
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int krow = 0; krow < H_fmap_in; krow ++) {
-			for (int kcol = 0; kcol < H_fmap_in; kcol ++) {
-				weight_dil[co][krow*stride][kcol*stride] = weight[co][krow][kcol];
+	for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
+		for (int krow = 0; krow < H_fmap_in_hw; krow ++) {
+			for (int kcol = 0; kcol < H_fmap_in_hw; kcol ++) {
+				weight_dil[co][krow*stride_hw][kcol*stride_hw] = weight[co][krow][kcol];
 			}
 		}
 	}
 
 	// conv1x1 grad
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+	for (int co = 0; co < CHANNEL_OUT_T_HW; co ++) {
+		for (int ci = 0; ci < CHANNEL_IN_T_HW; ci ++) {
 			accum = 0;
-			for (int krow = 0; krow < H_fmap_in * stride; krow ++) {
-				for (int kcol = 0; kcol < H_fmap_in * stride; kcol ++) {
+			for (int krow = 0; krow < H_fmap_in_hw * stride_hw; krow ++) {
+				for (int kcol = 0; kcol < H_fmap_in_hw * stride_hw; kcol ++) {
 					int row_in = krow;
 					int col_in = kcol;
-					if (row_in >= 0 && row_in < H_fmap_in*stride && col_in >= 0 && col_in < H_fmap_in*stride) {
+					if (row_in >= 0 && row_in < H_fmap_in_hw*stride_hw && col_in >= 0 && col_in < H_fmap_in_hw*stride_hw) {
 						float act = input[ci][row_in][col_in];
 						float wt = weight_dil[co][krow][kcol];
 						accum += act * wt;
 					}
 				}
 			}
-			output[co][ci] += -lr_sw * accum;
+			// output[co][ci] += -lr_sw * accum;
+			vel[co][ci] = vel[co][ci]*mom_sw + lr_sw*accum;
+			output[co][ci] -= vel[co][ci];
 		}
 	}
 }
 
 // AvgPool
 void generic_avgpool_hw(
-	float avg_inputs[CHANNEL_IN_T][WIDTH][WIDTH],	// in, 64x8x8
+	float avg_inputs[CHANNEL_IN_T_HW][WIDTH_HW][WIDTH_HW],	// in, 64x8x8
 	float out_buf[64],								// out, avg_outputs
 
 	uint1 ctrl_avgpool_hw,	// 0 for forward and 1 for backward
 	int c_out,
 
 	float out_buf_copy[64],
-	float bias_gap4add[CHANNEL_IN_T]
+	float bias_gap4add[CHANNEL_IN_T_HW]
 )
 {
 	// forward
@@ -1344,22 +1351,22 @@ void generic_avgpool_hw(
 		for (int c = 0; c < 64; c ++) {
 			out_buf[c] = 0;
 		}
-		for (int c = 0; c < CHANNEL_IN_T; c ++) {
+		for (int c = 0; c < CHANNEL_IN_T_HW; c ++) {
 			for (int s = 0; s < 8; s ++) {
 				for (int ss = 0; ss < 8; ss ++) {
-					 out_buf[c + c_out*CHANNEL_IN_T] += avg_inputs[c][s][ss]/64;
-					 out_buf_copy[c + c_out*CHANNEL_IN_T] += avg_inputs[c][s][ss]/64;
+					 out_buf[c + c_out*CHANNEL_IN_T_HW] += avg_inputs[c][s][ss]/64;
+					 out_buf_copy[c + c_out*CHANNEL_IN_T_HW] += avg_inputs[c][s][ss]/64;
 				}
 			}
-//			printf("avgpool out: %f \n", out_buf[c + c_out*CHANNEL_IN_T]);
+//			printf("avgpool out: %f \n", out_buf[c + c_out*CHANNEL_IN_T_HW]);
 		}
 	}
 	// backward
 	else {
 		for (int s = 0; s < 8; s ++) {
 			for (int ss = 0; ss < 8; ss ++) {
-				for (int c = 0; c < CHANNEL_IN_T; c ++) {
-					avg_inputs[c][s][ss] = out_buf[c + c_out*CHANNEL_IN_T]/64;
+				for (int c = 0; c < CHANNEL_IN_T_HW; c ++) {
+					avg_inputs[c][s][ss] = out_buf[c + c_out*CHANNEL_IN_T_HW]/64;
 				}
 			}
 		}
@@ -1417,24 +1424,24 @@ void generic_FC_hw(
 }
 
 void generic_shortcut_hw(
-	float input_a[CHANNEL_OUT_T][WIDTH][WIDTH],			// in1
-	float input_b[CHANNEL_OUT_T][WIDTH][WIDTH],			// in2
-	float out_buf[CHANNEL_OUT_T][WIDTH][WIDTH],			// out
-	float out_buf_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, off-chip
-//	float out_buf_SC[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, ideneity for generic_shortcut_hw
+	float input_a[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],			// in1
+	float input_b[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],			// in2
+	float out_buf[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],			// out
+	float out_buf_DDR[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],		// out_copy, off-chip
+//	float out_buf_SC[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],		// out_copy, ideneity for generic_shortcut_hw
 
 	int H_fmap_in,
 	uint1 ctrl_sc,										// if ctrl_sc=0, generate and send out_copy into DDR
 //	uint1 ctrl_sc_id,
 
-//	float shared_exp_bias[CHANNEL_OUT_T],
-	float bias_gap4add[CHANNEL_OUT_T]
-//	float act_bias_shift[CHANNEL_OUT_T]
+//	float shared_exp_bias[CHANNEL_OUT_T_HW],
+	float bias_gap4add[CHANNEL_OUT_T_HW]
+//	float act_bias_shift[CHANNEL_OUT_T_HW]
 )
 {
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
 
 				out_buf[c][row][col] = input_a[c][row][col] + input_b[c][row][col];
 				if (ctrl_sc == 0) {
@@ -1450,39 +1457,39 @@ void generic_shortcut_hw(
 
 // generic_bn_relu_hw
 void generic_bn_relu_hw(
-	float bn_inputs[CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	float out_buf[CHANNEL_OUT_T][WIDTH][WIDTH],			// out, bn_outputs
+	float bn_inputs[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],		// in
+	float out_buf[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],			// out, bn_outputs
 
-	float out_buf_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, off-chip for backprop
-	uint1 relu_mask[CHANNEL_OUT_T][WIDTH][WIDTH],		// out, relu_mask for relu_bp
-//	float out_buf_SC[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, ideneity for generic_shortcut_hw
+	float out_buf_DDR[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],		// out_copy, off-chip for backprop
+	uint1 relu_mask[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],		// out, relu_mask for relu_bp
+//	float out_buf_SC[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],		// out_copy, ideneity for generic_shortcut_hw
 
-	float bn_wt[CHANNEL_OUT_T],
-	float bn_bias[CHANNEL_OUT_T],
+	float bn_wt[CHANNEL_OUT_T_HW],
+	float bn_bias[CHANNEL_OUT_T_HW],
 
     int H_fmap_in,
 //	uint1 ctrl_bn_id,
 
-//	float shared_exp_bias[CHANNEL_OUT_T],
-	float bias_gap4add[CHANNEL_OUT_T]
-//	float act_bias_shift[CHANNEL_OUT_T]
+//	float shared_exp_bias[CHANNEL_OUT_T_HW],
+	float bias_gap4add[CHANNEL_OUT_T_HW]
+//	float act_bias_shift[CHANNEL_OUT_T_HW]
 )
 {
 	int N = H_fmap_in * H_fmap_in;
-	float mu[CHANNEL_OUT_T];
-	float std_var[CHANNEL_OUT_T];
-	float sum[CHANNEL_OUT_T] = {0};
+	float mu[CHANNEL_OUT_T_HW];
+	float std_var[CHANNEL_OUT_T_HW];
+	float sum[CHANNEL_OUT_T_HW] = {0};
 	// mean
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
 				sum[c] += bn_inputs[c][row][col];
 			}
 		}
 	}
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
 				mu[c] = sum[c]/N;
 			}
 		}
@@ -1491,19 +1498,19 @@ void generic_bn_relu_hw(
 	// std_var
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
 				std_var[c] += (bn_inputs[c][row][col]-mu[c])*(bn_inputs[c][row][col]-mu[c])/N;	// var
 			}
 		}
 	}
-	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+	for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
 		std_var[c] = hls::sqrt(std_var[c]);
 	}
 
 	// generic_bn_relu_hw
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
 				out_buf[c][row][col] = bn_wt[c]*(bn_inputs[c][row][col]-mu[c])/(std_var[c] + eps_sw) + bn_bias[c];
 				relu_mask[c][row][col] = (out_buf[c][row][col] > 0) ? 1 : 0;
 			}
@@ -1511,7 +1518,7 @@ void generic_bn_relu_hw(
 	}
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
 				out_buf[c][row][col] = (relu_mask[c][row][col] == 1) ? out_buf[c][row][col] : float(0);
 				out_buf_DDR[c][row][col] = out_buf[c][row][col];
 			}
@@ -1520,7 +1527,7 @@ void generic_bn_relu_hw(
 //	if (ctrl_bn_id == 0) {
 //		for (int row = 0; row < H_fmap_in; row ++) {
 //			for (int col = 0; col < H_fmap_in; col ++) {
-//				for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+//				for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
 //					out_buf_SC[c][row][col] = out_buf[c][row][col];
 //				}
 //			}
@@ -1529,93 +1536,99 @@ void generic_bn_relu_hw(
 }
 
 void generic_bn_relu_bp_hw(
-	float error_hw[CHANNEL_OUT_T][WIDTH][WIDTH], 			// in
-	float bn_inputs_fw[CHANNEL_OUT_T][WIDTH][WIDTH],	// in
-	uint1 relu_mask[CHANNEL_OUT_T][WIDTH][WIDTH],		// in
-	float out_buf[CHANNEL_OUT_T][WIDTH][WIDTH],			// out, error_bn
+	float error[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW], 			// in
+	float bn_inputs_fw[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],	// in
+	uint1 relu_mask_hw[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],		// in
+	float out_buf[CHANNEL_OUT_T_HW][WIDTH_HW][WIDTH_HW],			// out, error_bn
 
-	float bn_wt[CHANNEL_OUT_T],
-	float bn_bias[CHANNEL_OUT_T],
+	float bn_wt_hw[CHANNEL_OUT_T_HW],
+	float bn_bias_hw[CHANNEL_OUT_T_HW],
+	float vel_wt[CHANNEL_OUT_T_HW],
+	float vel_bias[CHANNEL_OUT_T_HW],
 
-	int H_fmap_in,
-	float bias_gap4add[CHANNEL_OUT_T]
+	int H_fmap_in_hw,
+	float bias_gap4add_hw[CHANNEL_OUT_T_HW]
 )
 {
-	int N = H_fmap_in * H_fmap_in;
-	float mu[CHANNEL_OUT_T];
-	float std_var[CHANNEL_OUT_T] = {0};
-	float sum[CHANNEL_OUT_T] = {0};
-	float g_bn_wt[CHANNEL_OUT_T] = {0};					// out
-	float g_bn_bias[CHANNEL_OUT_T] = {0};				// out
+	int N = H_fmap_in_hw * H_fmap_in_hw;
+	float mu[CHANNEL_OUT_T_HW];
+	float std_var[CHANNEL_OUT_T_HW] = {0};
+	float sum_hw[CHANNEL_OUT_T_HW] = {0};
+	float g_bn_wt[CHANNEL_OUT_T_HW] = {0};					// out
+	float g_bn_bias[CHANNEL_OUT_T_HW] = {0};				// out
 
 	// temp buffer init
-	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+	for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
 		std_var[c] = 0;
-		sum[c] = 0;
+		sum_hw[c] = 0;
 		g_bn_bias[c] = 0;
 		g_bn_wt[c] = 0;
 	}
 
 	// relu_bp
-	for (int row = 0; row < H_fmap_in; row ++) {
-		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-				error_hw[c][row][col] = (relu_mask[c][row][col] == 1) ? error_hw[c][row][col] : float(0);
+	for (int row = 0; row < H_fmap_in_hw; row ++) {
+		for (int col = 0; col < H_fmap_in_hw; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
+				error[c][row][col] = (relu_mask_hw[c][row][col] == 1) ? error[c][row][col] : float(0);
 			}
 		}
 	}
 
 	// mean
-	for (int row = 0; row < H_fmap_in; row ++) {
-		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-				sum[c] += bn_inputs_fw[c][row][col];
+	for (int row = 0; row < H_fmap_in_hw; row ++) {
+		for (int col = 0; col < H_fmap_in_hw; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
+				sum_hw[c] += bn_inputs_fw[c][row][col];
 			}
 		}
 	}
-	for (int row = 0; row < H_fmap_in; row ++) {
-		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-				mu[c] = sum[c]/N;
+	for (int row = 0; row < H_fmap_in_hw; row ++) {
+		for (int col = 0; col < H_fmap_in_hw; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
+				mu[c] = sum_hw[c]/N;
 			}
 		}
 	}
 
 	// std_var
-	for (int row = 0; row < H_fmap_in; row ++) {
-		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+	for (int row = 0; row < H_fmap_in_hw; row ++) {
+		for (int col = 0; col < H_fmap_in_hw; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
 				std_var[c] += (bn_inputs_fw[c][row][col]-mu[c])*(bn_inputs_fw[c][row][col]-mu[c])/N;	// var
 			}
 		}
 	}
-	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+	for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
 		std_var[c] = hls::sqrt(std_var[c]);
 	}
 
 	// grad of generic_bn_hw params
-	for (int row = 0; row < H_fmap_in; row ++) {
-		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-				g_bn_bias[c] += error_hw[c][row][col];
-				g_bn_wt[c] += error_hw[c][row][col] * (bn_inputs_fw[c][row][col]-mu[c])/(std_var[c]+eps_sw);
+	for (int row = 0; row < H_fmap_in_hw; row ++) {
+		for (int col = 0; col < H_fmap_in_hw; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
+				g_bn_bias[c] += error[c][row][col];
+				g_bn_wt[c] += error[c][row][col] * (bn_inputs_fw[c][row][col]-mu[c])/(std_var[c]+eps_sw);
 			}
 		}
 	}
 
 	// generic_bn_bp_hw
-	for (int row = 0; row < H_fmap_in; row ++) {
-		for (int col = 0; col < H_fmap_in; col ++) {
-			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-				out_buf[c][row][col] = bn_wt[c]*error_hw[c][row][col]/(std_var[c]+eps_sw) - bn_wt[c]*g_bn_bias[c]/(N*(std_var[c]+eps_sw)) - bn_wt[c]*(bn_inputs_fw[c][row][col]-mu[c])*g_bn_wt[c]/(N*(std_var[c]*std_var[c]+eps_sw));
+	for (int row = 0; row < H_fmap_in_hw; row ++) {
+		for (int col = 0; col < H_fmap_in_hw; col ++) {
+			for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
+				out_buf[c][row][col] = bn_wt_hw[c]*error[c][row][col]/(std_var[c]+eps_sw) - bn_wt_hw[c]*g_bn_bias[c]/(N*(std_var[c]+eps_sw)) - bn_wt_hw[c]*(bn_inputs_fw[c][row][col]-mu[c])*g_bn_wt[c]/(N*(std_var[c]*std_var[c]+eps_sw));
 			}
 		}
 	}
 
 	// bn_sw params update
-	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-		bn_bias[c] += -lr_sw * g_bn_bias[c];
-		bn_wt[c] += -lr_sw * g_bn_wt[c];
+	for (int c = 0; c < CHANNEL_OUT_T_HW; c ++) {
+		// bn_bias_hw[c] += -lr_sw * g_bn_bias[c];
+		// bn_wt_hw[c] += -lr_sw * g_bn_wt[c];
+		vel_wt[c] = vel_wt[c]*mom_sw + lr_sw * g_bn_wt[c];
+		bn_wt_hw[c] -= vel_wt[c];
+		vel_bias[c] = vel_bias[c]*mom_sw + lr_sw * g_bn_bias[c];
+		bn_bias_hw[c] -= vel_bias[c];
 	}
 }
 
@@ -1790,7 +1803,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	stride_hw = 1;
 
 	in_channels_after_pack_hw = 1;
-	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T;
+	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T_HW;
 
 	conv_3x3_weight_ptr_hw = 0;
 
@@ -1800,8 +1813,9 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer1_Conv1:
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_hw += 1;	// ini_hw = 1
-		conv_3x3_weight_ptr_hw += 1;
+		// conv_3x3_weight_ptr_hw += 1;
 		for (int c_in = 0; c_in < in_channels_after_pack_hw; c_in ++) {
+			conv_3x3_weight_ptr_hw += 1;
 
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -1821,8 +1835,8 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	H_fmap_out_hw = 32;
 	stride_hw = 1;
 
-	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T;;
-	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T;
+	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T_HW;;
+	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T_HW;
 
 	////////////////////////////////////////////////
 	//////////// layer1 PG2 ////////////////////////
@@ -1830,8 +1844,9 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer1_Conv2:
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_hw += 1;	// ini_hw = 2
-		conv_3x3_weight_ptr_hw += 1;
+		// conv_3x3_weight_ptr_hw += 1;
 		for (int c_in = 0; c_in < in_channels_after_pack_hw; c_in ++) {
+			conv_3x3_weight_ptr_hw += 1;
 
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -1855,8 +1870,8 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	H_fmap_out_hw = 16;
 	stride_hw = 2;
 
-	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T;
-	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T;
+	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T_HW;
+	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T_HW;
 
 	////////////////////////////////////////////////
 	//////////// layer1 shortcut ///////////////////
@@ -1864,8 +1879,9 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer1_ConvSC:
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_hw += 1;	// ini_hw = 3
-		conv_3x3_weight_ptr_hw += 1;
+		// conv_3x3_weight_ptr_hw += 1;
 		for (int c_in = 0; c_in < in_channels_after_pack_hw; c_in ++) {
+			conv_3x3_weight_ptr_hw += 1;
 
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -1889,8 +1905,8 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	H_fmap_out_hw = 16;
 	stride_hw = 1;
 
-	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T;
-	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T;
+	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T_HW;
+	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T_HW;
 
 	////////////////////////////////////////////////
 	//////////// layer2 PG1 ////////////////////////
@@ -1898,8 +1914,9 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer2_Conv1:
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_hw += 1;	// ini_hw = 4
-		conv_3x3_weight_ptr_hw += 1;
+		// conv_3x3_weight_ptr_hw += 1;
 		for (int c_in = 0; c_in < in_channels_after_pack_hw; c_in ++) {
+			conv_3x3_weight_ptr_hw += 1;
 
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -1919,8 +1936,9 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer2_Conv2:
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_hw += 1;	// ini_hw = 5
-		conv_3x3_weight_ptr_hw += 1;
+		// conv_3x3_weight_ptr_hw += 1;
 		for (int c_in = 0; c_in < in_channels_after_pack_hw; c_in ++) {
+			conv_3x3_weight_ptr_hw += 1;
 
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -1944,8 +1962,8 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	H_fmap_out_hw = 8;
 	stride_hw = 2;
 
-	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T;
-	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T;
+	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T_HW;
+	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T_HW;
 
 	////////////////////////////////////////////////
 	//////////// layer2 shortcut ///////////////////
@@ -1953,8 +1971,9 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer2_ConvSC:
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_hw += 1;	// ini_hw = 6
-		conv_3x3_weight_ptr_hw += 1;
+		// conv_3x3_weight_ptr_hw += 1;
 		for (int c_in = 0; c_in < in_channels_after_pack_hw; c_in ++) {
+			conv_3x3_weight_ptr_hw += 1;
 
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -2046,8 +2065,8 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	H_fmap_out_hw = 16;
 	stride_hw = 2;
 
-	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T;
-	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T;
+	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T_HW;
+	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T_HW;
 
 	ctrl_conv_hw = 1;
 
@@ -2057,15 +2076,17 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer2_ConvSC_bp:
 	for (int c_in = in_channels_after_pack_hw - 1; c_in >= 0; c_in --) {
 		ini_hw -= 1;	// ini_hw = 6
-		conv_3x3_weight_ptr_hw -= 1;
+		// conv_3x3_weight_ptr_hw -= 1;
 
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
-			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
+			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw], bn_wt_vel_hw[ini_hw], bn_bias_vel_hw[ini_hw],
 			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
+			conv_3x3_weight_ptr_hw -= 1;
+
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -2074,7 +2095,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
 			generic_conv_3x3_grad_hw(
-				out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw],
+				out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T_HW + 1], msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], vel_conv_3x3_hw[conv_3x3_weight_ptr_hw],
 				stride_hw, H_fmap_in_hw
 			);
 			// end gradient calculation
@@ -2092,8 +2113,8 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	H_fmap_out_hw = 16;
 	stride_hw = 1;
 
-	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T;
-	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T;
+	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T_HW;
+	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T_HW;
 
 	////////////////////////////////////////////////
 	//////////// layer2 PG2 ////////////////////////
@@ -2101,15 +2122,17 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer2_Conv2_bp:
 	for (int c_in = in_channels_after_pack_hw - 1; c_in >= 0; c_in --) {
 		ini_hw -= 1;	// ini_hw = 5
-		conv_3x3_weight_ptr_hw -= 1;
+		// conv_3x3_weight_ptr_hw -= 1;
 
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
-			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
+			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw], bn_wt_vel_hw[ini_hw], bn_bias_vel_hw[ini_hw],
 			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
+			conv_3x3_weight_ptr_hw -= 1;
+
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(	// MODIFIED HERE
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -2118,7 +2141,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
 			generic_conv_3x3_grad_hw(
-				out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw],
+				out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T_HW + 1], msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], vel_conv_3x3_hw[conv_3x3_weight_ptr_hw],
 				stride_hw, H_fmap_in_hw
 			);
 			// end gradient calculation
@@ -2132,15 +2155,17 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer2_Conv1_bp:
 	for (int c_in = in_channels_after_pack_hw - 1; c_in >= 0; c_in --) {
 		ini_hw -= 1;	// ini_hw = 4
-		conv_3x3_weight_ptr_hw -= 1;
+		// conv_3x3_weight_ptr_hw -= 1;
 
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
-			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
+			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw], bn_wt_vel_hw[ini_hw], bn_bias_vel_hw[ini_hw],
 			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
+			conv_3x3_weight_ptr_hw -= 1;
+
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -2150,7 +2175,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			// conv_3x3_weight_grad_cal
 			if (c_out <= out_channels_after_pack_hw/2 - 1) {
 				generic_conv_3x3_grad_hw(
-					out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw],
+					out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T_HW + 1], msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], vel_conv_3x3_hw[conv_3x3_weight_ptr_hw],
 					stride_hw, H_fmap_in_hw
 				);
 			}
@@ -2169,8 +2194,8 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	H_fmap_out_hw = 32;
 	stride_hw = 2;
 
-	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T;
-	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T;
+	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T_HW;
+	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T_HW;
 
 	////////////////////////////////////////////////
 	//////////// layer1 shortcut ///////////////////
@@ -2178,15 +2203,17 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer1_ConvSC_bp:
 	for (int c_in = in_channels_after_pack_hw - 1; c_in >= 0; c_in --) {
 		ini_hw -= 1;	// ini_hw = 3
-		conv_3x3_weight_ptr_hw -= 1;
+		// conv_3x3_weight_ptr_hw -= 1;
 
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
-			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
+			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw], bn_wt_vel_hw[ini_hw], bn_bias_vel_hw[ini_hw],
 			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
+			conv_3x3_weight_ptr_hw -= 1;
+
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -2196,7 +2223,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			// conv_3x3_weight_grad_cal
 			if (c_in <= in_channels_after_pack_hw/2 - 1) {
 				generic_conv_3x3_grad_hw(
-					out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw],
+					out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T_HW + 1], msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], vel_conv_3x3_hw[conv_3x3_weight_ptr_hw],
 					stride_hw, H_fmap_in_hw
 				);
 			}
@@ -2215,8 +2242,8 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	H_fmap_out_hw = 32;
 	stride_hw = 1;
 
-	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T;
-	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T;
+	out_channels_after_pack_hw = out_channels_hw/CHANNEL_OUT_T_HW;
+	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T_HW;
 
 	////////////////////////////////////////////////
 	//////////// layer1 PG2 ////////////////////////
@@ -2224,15 +2251,17 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer1_Conv2_bp:
 	for (int c_in = in_channels_after_pack_hw - 1; c_in >= 0; c_in --) {
 		ini_hw -= 1;	// ini_hw = 2
-		conv_3x3_weight_ptr_hw -= 1;
+		// conv_3x3_weight_ptr_hw -= 1;
 
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
-			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
+			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw], bn_wt_vel_hw[ini_hw], bn_bias_vel_hw[ini_hw],
 			H_fmap_in_hw, bias_gap4add_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
+			conv_3x3_weight_ptr_hw -= 1;
+
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(	// MODIFIED HERE
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -2242,7 +2271,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			// conv_3x3_weight_grad_cal
 			if (c_out <= 0) {
 				generic_conv_3x3_grad_hw(
-					out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T + 1], msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw],
+					out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T_HW + 1], msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], vel_conv_3x3_hw[conv_3x3_weight_ptr_hw],
 					stride_hw, H_fmap_in_hw
 				);
 			}
@@ -2258,7 +2287,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	stride_hw = 1;
 
 	out_channels_after_pack_hw = 1;
-	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T;
+	in_channels_after_pack_hw = in_channels_hw/CHANNEL_IN_T_HW;
 
 	////////////////////////////////////////////////
 	//////////// layer1 PG1 ////////////////////////
@@ -2266,14 +2295,16 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_layer1_Conv1_bp:
 	for (int c_in = in_channels_after_pack_hw - 1; c_in >= 0; c_in --) {
 		ini_hw -= 1;	// ini_hw = 1
-		conv_3x3_weight_ptr_hw -= 1;
+		// conv_3x3_weight_ptr_hw -= 1;
 
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
-			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
+			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw], bn_wt_vel_hw[ini_hw], bn_bias_vel_hw[ini_hw],
 			H_fmap_in_hw, bias_gap4add_hw
 		);
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
+			conv_3x3_weight_ptr_hw -= 1;
+			
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
@@ -2283,7 +2314,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			// conv_3x3_weight_grad_cal
 			if (c_in <= 0) {
 				generic_conv_3x3_grad_hw(
-					out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T], msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw],
+					out_buf_t1_hw[ini_hw - out_channels_hw/CHANNEL_OUT_T_HW], msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], vel_conv_3x3_hw[conv_3x3_weight_ptr_hw],
 					stride_hw, H_fmap_in_hw
 				);
 			}
@@ -2347,6 +2378,7 @@ int main(int argc, char **argv)
 
 	float image_sw[3][32][32];
 	load_image_CIFAR100();
+//	load_image_CIFAR10();
 
 	// run k epochs
 	for (int k = 0; k < EPOCH; k ++) {
@@ -2359,13 +2391,15 @@ int main(int argc, char **argv)
 		////////////////////////////////
 
 		get_image_CIFAR100(images, 0, image_sw);
+//		get_image_CIFAR10(images, 10, image_sw);
 
 		FracNet_sw(image_sw);
 
 		cout << "loss_sw: " << loss_sw << endl;
-		for (int i = 0; i < 10; i ++) {
-			cout << "error_sw: " << error_sw[i] << "  " << endl;
-		}
+//		for (int i = 0; i < 10; i ++) {
+//			cout << "error_sw: " << error_sw[i] << "  " << endl;
+//		}
+//		cout << "error_sw: " << error_sw[1] << "  " << endl;
 
 		cout << " "<< endl;
 
@@ -2376,9 +2410,10 @@ int main(int argc, char **argv)
 		FracNet_hw(image_sw);
 
 		cout << "loss_hw: " << loss_hw << endl;
-		for (int i = 0; i < 10; i ++) {
-			cout << "error_hw: " << error_hw[i] << "  " << endl;
-		}
+//		for (int i = 0; i < 10; i ++) {
+//			cout << "error_hw: " << error_hw[i] << "  " << endl;
+//		}
+//		cout << "error_hw: " << error_hw[1] << "  " << endl;
 
 		cout << " "<< endl;
 
@@ -2392,9 +2427,10 @@ int main(int argc, char **argv)
 		FracNet_T(image_sw, ctrl_tl, loss_bm, error_bm);
 
 		cout << "loss_bm: " << loss_bm << endl;
-		for (int i = 0; i < 10; i ++) {
-			cout << "error_bm: " << error_bm[i] << "  " << endl;
-		}
+//		for (int i = 0; i < 10; i ++) {
+//			cout << "error_bm: " << error_bm[i] << "  " << endl;
+//		}
+//		cout << "error_bm: " << error_bm[1] << "  " << endl;
 
 		cout << " "<< endl;
 	}
@@ -2411,9 +2447,10 @@ int main(int argc, char **argv)
 		FracNet_T(image_sw, ctrl_tl, loss_bm, error_bm);
 
 		cout << "tl_loss_bm: " << loss_bm << endl;
-		for (int i = 0; i < 10; i ++) {
-			cout << "tl_error_bm: " << error_bm[i] << "  " << endl;
-		}
+//		for (int i = 0; i < 10; i ++) {
+//			cout << "tl_error_bm: " << error_bm[i] << "  " << endl;
+//		}
+//		cout << "tl_error_bm: " << error_bm[1] << "  " << endl;
 	}
 	return 0;
 }

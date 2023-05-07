@@ -21,7 +21,7 @@ used in the accelerator.
 #define CHANNEL_OUT_T 8
 #define WIDTH 33
 
-#define NUM_3x3_WT 41
+#define NUM_3x3_WT 245 // 41
 #define NUM_ACT 41
 #define ACT_BIAS 64/CHANNEL_IN_T
 #define WT_BIAS (NUM_3x3_WT)/CHANNEL_OUT_T      // 8*8*3*3
