@@ -3,7 +3,7 @@
 The anonymous link describes an HLS-based CNN training accelerator using the back-propagation algorithm with the SGD optimiser. The current open-source code is in floating-point format to give a quick functional verification of the training accelerator design. A full version using the block minifloat will be released afterwards.
 
 <div align=center>
-<img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/resnet20/resnet_loss.png" width="500px"/><img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/vgg-like/vgg_loss.png" width="500px"/><br/>
+<img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/resnet20/resnet_loss.png" width="500px"/>  <img src="https://github.com/chuliang007/resnet20_cifar-training/blob/main/vgg-like/vgg_loss.png" width="500px"/><br/>
 </div>
 
 ## Structure  
