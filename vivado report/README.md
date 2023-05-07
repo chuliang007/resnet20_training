@@ -1,1 +1,0 @@
-We attached the Vivado HLS synthesis, implementation, and co-sim report of ResNet20 on CIFAR-10; the Vivado implementation report of the PS-PL system (project named 'resnet_v5'); and a .log file indicating loss/error information on Fig. 10.
