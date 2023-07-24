@@ -10,14 +10,14 @@ The repo describes an HLS-based CNN training accelerator in floating-point forma
 > ```fc_test.py``` <br>
 
 
-**resnet20** and **vgg-like**- HLS design of the accelerator with both input and output channel tiling.
+**resnet20**- HLS design of the accelerator with both input and output channel tiling.
 
 > design source files    
 >> ```bnn.h``` <br>
 >> ```conv_weights.h``` <br>
 >> ```dimension_def.h``` <br> 
 >> ```layer.h``` <br>
->> ```resnet20.cc``` or ```vgg.cc``` <br>
+>> ```resnet20.cc``` <br>
 >> ```typedefs.h``` <br>
 
 > testbench files
@@ -25,8 +25,8 @@ The repo describes an HLS-based CNN training accelerator in floating-point forma
 >> ```tb.cc``` <br>
 >> ```weights_tb.h``` <br>
 
->> image data from http://www.cs.toronto.edu/~kriz/cifar.html
->>> ```data_batch_1.bin``` <br>
->>> ```train.bin``` <br>
+>>> image data from http://www.cs.toronto.edu/~kriz/cifar.html
+>> ```data_batch_1.bin``` <br>
+>> ```train.bin``` <br>
 
 
