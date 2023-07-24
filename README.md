@@ -25,8 +25,8 @@ The repo describes an HLS-based CNN training accelerator in floating-point forma
 >> ```tb.cc``` <br>
 >> ```weights_tb.h``` <br>
 
->>> image data from http://www.cs.toronto.edu/~kriz/cifar.html
+
 >> ```data_batch_1.bin``` <br>
->> ```train.bin``` <br>
+>> ```train.bin``` <br> (image data from http://www.cs.toronto.edu/~kriz/cifar.html)
 
 
