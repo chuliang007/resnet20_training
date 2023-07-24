@@ -3825,7 +3825,7 @@ int main(int argc, char **argv)
 	for (int k = 0; k < EPOCH; k ++) {
 
 		ctrl_tl = 1;
-//		cout << "---------------" << " iteration " << k+1 << " ---------------" << endl;
+		cout << "---------------" << " iteration " << k+1 << " ---------------" << endl;
 
 		////////////////////////////////
 		//////// SOFTWARE //////////////
@@ -3833,22 +3833,21 @@ int main(int argc, char **argv)
 
 		get_image_CIFAR100(images, 0, image_sw);
 
-//		FracNet_sw(image_sw);
-//
-//		cout << "loss_sw: " << loss_sw << endl;
-//		cout << "error_sw: " << error_sw[1] << "  " << endl;
-//		cout << "" << endl;
-//
-//		//////////////////////////////
-//		////// HARDWARE //////////////
-//		//////////////////////////////
-//
-//		FracNet_hw(image_sw);
-//
-//		cout << "loss_hw: " << loss_hw << endl;
-//		cout << "error_hw: " << error_hw[1] << "  " << endl;
-//		cout << "" << endl;
-//		}
+		FracNet_sw(image_sw);
+
+		cout << "loss_sw: " << loss_sw << endl;
+		cout << "error_sw: " << error_sw[1] << "  " << endl;
+		cout << "" << endl;
+
+		//////////////////////////////
+		////// HARDWARE //////////////
+		//////////////////////////////
+
+		FracNet_hw(image_sw);
+
+		cout << "loss_hw: " << loss_hw << endl;
+		cout << "error_hw: " << error_hw[1] << "  " << endl;
+		cout << "" << endl;
 
 		////////////////////////////////
 		//////// bm(2, 5) //////////////
@@ -3856,13 +3855,8 @@ int main(int argc, char **argv)
 
 		FracNet_T(image_sw, ctrl_tl, loss_bm, error_bm);
 
-//		cout << "loss_bm: " << loss_bm << endl;
-//		cout << "error_bm: " << error_bm[1] << "  " << endl;
-
-//		cout << loss_bm << ", ";
-//		if ((k+1)%10 == 0) {
-//			cout << " ..."<< endl;
-//		}
+		cout << "loss_bm: " << loss_bm << endl;
+		cout << "error_bm: " << error_bm[1] << "  " << endl;
 	}
 
 	// run k epochs fune-tuning
@@ -3870,19 +3864,16 @@ int main(int argc, char **argv)
 	for (int k = 0; k < EPOCH; k ++) {
 
 		ctrl_tl = 0;
-//		cout << "---------------" << " iteration_tl " << k+1 << " ---------------" << endl;
+		cout << "---------------" << " iteration_tl " << k+1 << " ---------------" << endl;
 
 		get_image_CIFAR10(images, 10, image_sw);
 
 		FracNet_T(image_sw, ctrl_tl, loss_bm, error_bm);
 
-//		cout << "tl_loss_bm: " << loss_bm << endl;
-//		cout << "tl_error_bm: " << error_bm[1] << "  " << endl;
-		cout << loss_bm << ", ";
-		if ((k+1)%10 == 0) {
-			cout << " ..."<< endl;
-		}
+		cout << "tl_loss_bm: " << loss_bm << endl;
+		cout << "tl_error_bm: " << error_bm[1] << "  " << endl;
 	}
+	
 	return 0;
 }
 
