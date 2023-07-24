@@ -15,22 +15,14 @@ using namespace std;
 unsigned char images[EPOCH*3*32*32];
 unsigned char labels[EPOCH];
 
-//const uint2 exp_bias = 2;	// ieee-754 shared_exp_bias
-float lr_sw = 0.005; //1e-2;
+const uint2 exp_bias = 2;
+float lr_sw = 0.005;
 float eps_sw = 1e-10;
-float mom_sw = 0; //0.9;
+float mom_sw = 0.9;
 
 #define CHANNEL_IN_T 8
 #define CHANNEL_OUT_T 8
 #define WIDTH 33
-
-#define NUM_3x3_WT 467 //87
-#define NUM_1x1_WT 41  //13
-#define NUM_ACT 99
-#define ACT_BIAS 64/CHANNEL_IN_T
-#define WT_BIAS NUM_3x3_WT      // 8*8*3*3
-#define WT_BIAS_1x1 NUM_1x1_WT  // 8*8*3*3
-#define NUM_TILE 64/CHANNEL_OUT_T
 
 //--------------------------------
 // floating-point golden reference
@@ -403,7 +395,7 @@ void rot_1x1
 template <int in_channels_hw, int out_channels_hw, int H_fmap_in_hw, int H_fmap_out_hw, int stride_hw>
 void conv_3x3_sw
 (
-	float input[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],			// in on-chip
+	float input[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],		// in on-chip
 	float weight[out_channels_hw][in_channels_hw][3][3],
 	float output[out_channels_hw][H_fmap_out_hw][H_fmap_out_hw]		// out on-chip
 )
@@ -436,7 +428,7 @@ void conv_3x3_sw
 template <int in_channels_hw, int out_channels_hw, int H_fmap_in_hw, int H_fmap_out_hw, int stride_hw>
 void conv_1x1_sw
 (
-	float input[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],			// in on-chip
+	float input[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],		// in on-chip
 	float weight[out_channels_hw][in_channels_hw],
 	float output[out_channels_hw][H_fmap_out_hw][H_fmap_out_hw]		// out on-chip
 )
@@ -466,7 +458,7 @@ void conv_1x1_sw
 template <int in_channels_hw, int out_channels_hw, int H_fmap_in_hw, int H_fmap_out_hw, int stride_hw>
 void deconv_3x3_sw
 (
-	float input[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],			// in on-chip
+	float input[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],		// in on-chip
 	float weight[out_channels_hw][in_channels_hw][3][3],
 	float output[out_channels_hw][H_fmap_out_hw][H_fmap_out_hw]		// out on-chip
 )
@@ -610,7 +602,6 @@ void conv_3x3_grad_sw
 								float act = input[ci][row_in][col_in];
 								float wt = weight_dil[co][krow][kcol];
 								accum += act * wt;
-								// if (act != 0 && wt != 0) printf("act = %f, wt: %f \n", act, wt);
 							}
 						}
 					}
@@ -665,7 +656,6 @@ void conv_1x1_grad_sw
 						float act = input[ci][row_in][col_in];
 						float wt = weight_dil[co][krow][kcol];
 						accum += act * wt;
-						// if (act != 0 && wt != 0) printf("act = %f, wt: %f \n", act, wt);
 					}
 				}
 			}
@@ -687,8 +677,8 @@ void bn_sw(
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
-	float mu[in_channels_hw];
-	float std_var[in_channels_hw];
+	float mu[in_channels_hw] = {0};
+	float std_var[in_channels_hw] = {0};
 	float sum_sw[in_channels_hw] = {0};
 	// mean
 	for (int row = 0; row < H_fmap_in_hw; row ++) {
@@ -732,7 +722,7 @@ void bn_sw(
 template <int in_channels_hw, int H_fmap_in_hw>
 void bn_relu_sw(
 	float bn_inputs[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],		// in
-	float out_buf[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],		// out, bn_outputs
+	float out_buf[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],			// out, bn_outputs
 	uint1 relu_mask_hw[in_channels_hw][H_fmap_in_hw][H_fmap_in_hw],		// out, relu_mask_hw for relu_bp
 
 	float bn_wt_hw[in_channels_hw],
@@ -740,8 +730,8 @@ void bn_relu_sw(
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
-	float mu[in_channels_hw];
-	float std_var[in_channels_hw];
+	float mu[in_channels_hw] = {0};
+	float std_var[in_channels_hw] = {0};
 	float sum_sw[in_channels_hw] = {0};
 	// mean
 	for (int row = 0; row < H_fmap_in_hw; row ++) {
@@ -803,8 +793,8 @@ void bn_bp_sw(
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
-	float mu[in_channels_hw];
-	float std_var[in_channels_hw];
+	float mu[in_channels_hw] = {0};
+	float std_var[in_channels_hw] = {0};
 	float sum_sw[in_channels_hw] = {0};
 	float g_bn_wt_hw[in_channels_hw] = {0};							// out
 	float g_bn_bias_hw[in_channels_hw] = {0};						// out
@@ -886,8 +876,8 @@ void bn_relu_bp_sw(
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
-	float mu[in_channels_hw];
-	float std_var[in_channels_hw];
+	float mu[in_channels_hw] = {0};
+	float std_var[in_channels_hw] = {0};
 	float sum_sw[in_channels_hw] = {0};
 	float g_bn_wt_hw[in_channels_hw] = {0};							// out
 	float g_bn_bias_hw[in_channels_hw] = {0};						// out
@@ -937,7 +927,6 @@ void bn_relu_bp_sw(
 				g_bn_wt_hw[c] += error_sw[c][row][col] * (bn_inputs_fw[c][row][col]-mu[c])/(std_var[c]+eps_sw);
 			}
 		}
-//		printf("g_bn_wt_hw[%d] = %f, g_bn_bias_hw[%d] = %f \n", c, g_bn_wt_hw[c], c, g_bn_bias_hw[c]);
 	}
 
 	// generic_bn_bp_hw
@@ -961,7 +950,6 @@ void bn_relu_bp_sw(
 				bn_bias_hw[c] -= vel_bias[c];
 			}
 		}
-//		printf("bn_wt_hw[%d] = %f, bn_bias_hw[%d] = %f \n", c, bn_wt_hw[c], c, bn_bias_hw[c]);
 	}
 }
 
@@ -985,7 +973,6 @@ void avgpool_sw(
 					 out_buf[c] += avg_inputs[c][s][ss]/64;
 				}
 			}
-//			printf("avgpool_sw out: %f \n", out_buf[c + c_out*in_channels_hw]);
 		}
 	}
 	// backward
@@ -1011,8 +998,6 @@ void FC_sw(
 	uint1 ctrl_fc_hw	// 0 for forward and 1 for backward
 )
 {
-//	float linear_weight_t[64][10];
-
 	// forward
 	if (ctrl_fc_hw == 0) {
 		// buffer init
@@ -1023,7 +1008,6 @@ void FC_sw(
 			for (int cii = 0; cii < 64; cii++) {
 				outputs[coo] += inputs[cii] * linear_weight[coo][cii];
 			}
-//			printf("FC_sw out: %f \n", outputs[coo]);
 		}
 	}
 	// backward
@@ -1073,7 +1057,7 @@ void shortcut_sw(
 
 float msb_fmap_tile_buffer_0_hw[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
 float msb_fmap_tile_buffer_1_hw[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
-float msb_fmap_tile_buffer_s2_hw[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];// activation/error on-chip
+float msb_fmap_tile_buffer_s2_hw[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH]; // activation/error on-chip
 float lsb_fmap_tile_buffer_hw[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];	// shortcut activation/error on-chip
 
 float out_buf_t0_hw[NUM_ACT][CHANNEL_OUT_T][WIDTH][WIDTH];				// conv output
@@ -1159,9 +1143,7 @@ void generic_conv_3x3_hw
 	int H_fmap_in_hw,
 	int H_fmap_out_hw,
 	int c_in,
-	uint1 ctrl_conv_hw,
-
-	float bias_gap4add_hw[CHANNEL_OUT_T]
+	uint1 ctrl_conv_hw
 )
 {
 	float act;
@@ -1196,7 +1178,6 @@ void generic_conv_3x3_hw
 								act = input[cin][row_in][col_in];
 								wt = weight[co][cin][krow][kcol];
 								accum += act * wt;
-//								if (act != 0 && wt != 0) printf("act: %f, wt: %f \n", act, wt);
 							}
 						}
 					}
@@ -1221,9 +1202,7 @@ void generic_deconv_3x3_hw
 	int H_fmap_in_hw,
 	int H_fmap_out_hw,
 	int c_in,
-	uint1 ctrl_conv_hw,
-
-	float bias_gap4add_hw[CHANNEL_OUT_T]
+	uint1 ctrl_conv_hw
 )
 {
 	float act;
@@ -1282,9 +1261,7 @@ void generic_deconv_3x3_hw
 					}
 				}
 				out_temp[co][row][col] += accum;
-
 				output[co][row][col] = out_temp[co][row][col];
-//				output_DDR[co][row][col] = out_temp[co][row][col];
 			}
 		}
 	}
@@ -1301,9 +1278,7 @@ void generic_conv_1x1_hw
 	int H_fmap_in_hw,
 	int H_fmap_out_hw,
 	int c_in,
-	uint1 ctrl_conv_hw,
-
-	float bias_gap4add_hw[CHANNEL_OUT_T]
+	uint1 ctrl_conv_hw
 )
 {
 	float act;
@@ -1357,9 +1332,7 @@ void generic_deconv_1x1_hw
 	int H_fmap_in_hw,
 	int H_fmap_out_hw,
 	int c_in,
-	uint1 ctrl_conv_hw,
-
-	float bias_gap4add_hw[CHANNEL_OUT_T]
+	uint1 ctrl_conv_hw
 )
 {
 	float act;
@@ -1415,7 +1388,6 @@ void generic_deconv_1x1_hw
 				out_temp[co][row][col] += accum;
 
 				output[co][row][col] = out_temp[co][row][col];
-//				output_DDR[co][row][col] = out_temp[co][row][col];
 			}
 		}
 	}
@@ -1536,8 +1508,7 @@ void generic_avgpool_hw(
 	int c_out,
 
 	float out_buf_SC[CHANNEL_IN_T][WIDTH][WIDTH],
-	float out_buf_copy[64],
-	float bias_gap4add_hw[CHANNEL_IN_T]
+	float out_buf_copy[64]
 )
 {
 	// forward
@@ -1553,7 +1524,6 @@ void generic_avgpool_hw(
 					 out_buf_copy[c + c_out*CHANNEL_IN_T] += avg_inputs[c][s][ss]/64;
 				}
 			}
-//			printf("avgpool out: %f \n", out_buf[c + c_out*CHANNEL_IN_T]);
 		}
 	}
 	// backward
@@ -1627,12 +1597,8 @@ void generic_shortcut_hw(
 //	float out_buf_SC[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, ideneity for generic_shortcut_hw
 
 	int H_fmap_in_hw,
-	uint1 ctrl_sc_hw,										// if ctrl_sc_hw=0, generate and send out_copy into DDR
-//	uint1 ctrl_sc_id,
+	uint1 ctrl_sc_hw									// if ctrl_sc_hw=0, generate and send out_copy into DDR
 
-//	float shared_exp_bias[CHANNEL_OUT_T],
-	float bias_gap4add_hw[CHANNEL_OUT_T]
-//	float act_bias_shift[CHANNEL_OUT_T]
 )
 {
 	for (int row = 0; row < H_fmap_in_hw; row ++) {
@@ -1643,9 +1609,7 @@ void generic_shortcut_hw(
 				if (ctrl_sc_hw == 0) {
 					out_buf_DDR[c][row][col] = out_buf[c][row][col];
 				}
-//				if (ctrl_sc_id == 0) {
-//					out_buf_SC[c][row][col] = out_buf[c][row][col];
-//				}
+
 			}
 		}
 	}
@@ -1660,10 +1624,7 @@ void generic_bn_hw(
 	float bn_wt_hw[CHANNEL_OUT_T],
 	float bn_bias_hw[CHANNEL_OUT_T],
 
-    int H_fmap_in_hw,
-//	float shared_exp_bias[CHANNEL_OUT_T],
-	float bias_gap4add_hw[CHANNEL_OUT_T]
-//	float act_bias_shift[CHANNEL_OUT_T]
+    int H_fmap_in_hw
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
@@ -1718,8 +1679,7 @@ void generic_bn_bp_hw(
 	float bn_wt_hw[CHANNEL_OUT_T],							// in
 	float bn_bias_hw[CHANNEL_OUT_T],
 
-	int H_fmap_in_hw,
-	float bias_gap4add_hw[CHANNEL_OUT_T]
+	int H_fmap_in_hw
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
@@ -1798,17 +1758,11 @@ void generic_bn_relu_hw(
 
 	float out_buf_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, off-chip for backprop
 	uint1 relu_mask_hw[CHANNEL_OUT_T][WIDTH][WIDTH],		// out, relu_mask_hw for relu_bp
-//	float out_buf_SC[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, ideneity for generic_shortcut_hw
 
 	float bn_wt_hw[CHANNEL_OUT_T],
 	float bn_bias_hw[CHANNEL_OUT_T],
 
-    int H_fmap_in_hw,
-//	uint1 ctrl_bn_id,
-
-//	float shared_exp_bias[CHANNEL_OUT_T],
-	float bias_gap4add_hw[CHANNEL_OUT_T]
-//	float act_bias_shift[CHANNEL_OUT_T]
+    int H_fmap_in_hw
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
@@ -1880,8 +1834,7 @@ void generic_bn_relu_bp_hw(
 	float bn_wt_hw[CHANNEL_OUT_T],
 	float bn_bias_hw[CHANNEL_OUT_T],
 
-	int H_fmap_in_hw,
-	float bias_gap4add_hw[CHANNEL_OUT_T]
+	int H_fmap_in_hw
 )
 {
 	int N = H_fmap_in_hw * H_fmap_in_hw;
@@ -1954,7 +1907,7 @@ void generic_bn_relu_bp_hw(
 			}
 		}
 	}
-	
+
 	// bn_sw params update
 	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 		bn_bias_hw[c] += -lr_sw * g_bn_bias[c];
@@ -2007,8 +1960,7 @@ void FracNet_sw(float image_sw[3][32][32]) {
 
 	shortcut_sw<16, 32>(layer1_1_sc_out, layer1_2_bn_relu2_out, layer1_2_sc_out);
 
-	
-	
+
 	////////////////////////////////////
 	//////////// layer2_sc  ////////////
 
@@ -2049,7 +2001,7 @@ void FracNet_sw(float image_sw[3][32][32]) {
 	shortcut_sw<32, 16>(layer2_1_sc_out, layer2_2_bn_relu2_out, layer2_2_sc_out);
 
 
-	
+
 	////////////////////////////////////
 	//////////// layer3_sc  ////////////
 
@@ -2107,7 +2059,7 @@ void FracNet_sw(float image_sw[3][32][32]) {
 	CE_loss:
 	loss_sw = 0;
 	for (int j = 0; j < 10; j ++) {
-		loss_sw += -hls::log2((1 + linear_out_buf_sw[j] + 0.5*(linear_out_buf_sw[j])*(linear_out_buf_sw[j]) + 0.1667*(linear_out_buf_sw[j])*(linear_out_buf_sw[j])*(linear_out_buf_sw[j]))/sum_sw) * (labels_sw[j]);
+		loss_sw += -log2((1 + linear_out_buf_sw[j] + 0.5*(linear_out_buf_sw[j])*(linear_out_buf_sw[j]) + 0.1667*(linear_out_buf_sw[j])*(linear_out_buf_sw[j])*(linear_out_buf_sw[j]))/sum_sw) * (labels_sw[j]);
 	}
 
 	CE_error:
@@ -2291,7 +2243,6 @@ void FracNet_sw(float image_sw[3][32][32]) {
 	conv_3x3_grad_sw<3, 16, 32, 1>(bn_relu_1_bp_out, image_sw, conv1_weight, conv1_weight_vel);
 }
 
-
 void FracNet_hw(float image_hw[3][32][32]) {
 
 	int H_fmap_in_hw, H_fmap_out_hw, in_channels_hw, out_channels_hw, in_channels_after_pack_hw, out_channels_after_pack_hw;
@@ -2348,13 +2299,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2384,13 +2335,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2402,24 +2353,24 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		ini_hw += 1;	// ini_hw = 3
 		// conv_3x3_weight_ptr_hw += 1;
 		for (int c_in = 0; c_in < in_channels_after_pack_hw; c_in ++) {
-			
+
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(	// MODIFIED HERE!
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_copy_hw += 1;
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t1_hw[ini_copy_hw],
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw	// generate and send out_copy into DDR
+			H_fmap_out_hw, ctrl_sc_hw	// generate and send out_copy into DDR
 		);
 	}
 
@@ -2436,13 +2387,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2458,20 +2409,20 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(	// MODIFIED HERE!
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_copy_hw += 1;
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t1_hw[ini_copy_hw],
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -2488,13 +2439,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2510,20 +2461,20 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(	// MODIFIED HERE!
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_copy_hw += 1;
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t1_hw[ini_copy_hw],
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -2554,13 +2505,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_1x1_weight_ptr_hw += 1;
 			generic_conv_1x1_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_1x1_weight_tile_buffer_hw[conv_1x1_weight_ptr_hw], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], out_buf_t1_hw[ini_hw], // conv+bn shortcut
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2577,13 +2528,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2612,20 +2563,20 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_copy_hw += 1;
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t1_hw[ini_copy_hw],
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -2642,13 +2593,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2664,20 +2615,20 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(	// MODIFIED HERE
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_copy_hw += 1;
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t1_hw[ini_copy_hw],
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -2694,13 +2645,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2716,20 +2667,20 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(	// MODIFIED HERE
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_copy_hw += 1;
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t1_hw[ini_copy_hw],
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -2758,13 +2709,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_1x1_weight_ptr_hw += 1;
 			generic_conv_1x1_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_1x1_weight_tile_buffer_hw[conv_1x1_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out],	 out_buf_t1_hw[ini_hw], // conv+bn shortcut
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2781,13 +2732,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2816,20 +2767,20 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_copy_hw += 1;
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t1_hw[ini_copy_hw],
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -2846,13 +2797,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2868,20 +2819,20 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(	// MODIFIED HERE
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_copy_hw += 1;
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t1_hw[ini_hw],
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -2898,13 +2849,13 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 
@@ -2920,20 +2871,20 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			conv_3x3_weight_ptr_hw += 1;
 			generic_conv_3x3_hw(
 				msb_fmap_tile_buffer_s2_hw[c_in], conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 		}
 		generic_bn_relu_hw(	// MODIFIED HERE
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], out_buf_t1_hw[ini_hw], relu_mask_hw[ini_hw],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_out_hw, bias_gap4add_hw
+			H_fmap_out_hw
 		);
 	}
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		ini_copy_hw += 1;
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t1_hw[ini_copy_hw],
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -2945,7 +2896,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_AvgPool:
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		generic_avgpool_hw(
-			msb_fmap_tile_buffer_0_hw[c_out], pool_out_buf_hw, ctrl_avgpool_hw, c_out, lsb_fmap_tile_buffer_hw[c_out], pool_out_buf_copy_hw, bias_gap4add_hw
+			msb_fmap_tile_buffer_0_hw[c_out], pool_out_buf_hw, ctrl_avgpool_hw, c_out, lsb_fmap_tile_buffer_hw[c_out], pool_out_buf_copy_hw
 		);
 	}
 
@@ -3001,7 +2952,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	LOOP_AvgPool_bp:
 	for (int c_out = 0; c_out < out_channels_after_pack_hw; c_out ++) {
 		generic_avgpool_hw(
-			msb_fmap_tile_buffer_1_hw[c_out], pool_out_buf_hw, ctrl_avgpool_hw, c_out, lsb_fmap_tile_buffer_hw[c_out], pool_out_buf_copy_hw, bias_gap4add_hw
+			msb_fmap_tile_buffer_1_hw[c_out], pool_out_buf_hw, ctrl_avgpool_hw, c_out, lsb_fmap_tile_buffer_hw[c_out], pool_out_buf_copy_hw
 		);
 	}
 
@@ -3032,7 +2983,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3040,7 +2991,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3064,15 +3015,15 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
-		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {		
+		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 			conv_3x3_weight_ptr_hw -= 1;
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(	// MODIFIED HERE
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, lsb_fmap_tile_buffer_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3087,7 +3038,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[0],
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -3102,14 +3053,14 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 			conv_3x3_weight_ptr_hw -= 1;
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3133,7 +3084,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3141,7 +3092,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(	// MODIFIED HERE
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_rot_hw, lsb_fmap_tile_buffer_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3156,7 +3107,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[0], // DDR not used
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -3164,14 +3115,14 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	//////////// layer3_0 PG2 //////////////////////
 
 	LOOP_layer3_0_Conv2_bp:
-	for (int c_in = in_channels_after_pack_hw - 1; c_in >= 0; c_in --) {		
+	for (int c_in = in_channels_after_pack_hw - 1; c_in >= 0; c_in --) {
 		ini_hw -= 1;	// ini_hw = 17
 		// conv_3x3_weight_ptr_hw -= 1;
 
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {	// stride_hw-2 input
@@ -3179,7 +3130,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, lsb_fmap_tile_buffer_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3218,7 +3169,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			lsb_fmap_tile_buffer_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3226,7 +3177,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3237,7 +3188,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 				);
 			}
 			// end gradient calculation
-			///////////////////////////			
+			///////////////////////////
 		}
 	}
 
@@ -3252,7 +3203,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],	// conv+bn shortcut
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3260,7 +3211,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_1x1_hw(conv_1x1_weight_tile_buffer_hw[conv_1x1_weight_ptr_hw], conv_1x1_weight_rot_hw);
 			generic_deconv_1x1_hw(	// note the index of shortcut input
 				msb_fmap_tile_buffer_0_hw[c_in], conv_1x1_weight_rot_hw, lsb_fmap_tile_buffer_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_1x1_weight_grad_cal
@@ -3278,7 +3229,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_s2_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[0], // DDR not used
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -3305,7 +3256,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3313,7 +3264,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3337,7 +3288,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3345,7 +3296,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_rot_hw, lsb_fmap_tile_buffer_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3360,7 +3311,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[0], // DDR not used
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -3374,7 +3325,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3382,7 +3333,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3406,7 +3357,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3414,7 +3365,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, lsb_fmap_tile_buffer_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3429,7 +3380,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[0],  // DDR not used
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -3444,7 +3395,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3452,7 +3403,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_rot_hw, lsb_fmap_tile_buffer_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3490,7 +3441,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			lsb_fmap_tile_buffer_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {	// stride_hw-2 input
@@ -3498,7 +3449,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3524,7 +3475,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],	// conv+generic_bn_hw shortcut
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {	// stride_hw-2 input
@@ -3532,7 +3483,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_1x1_hw(conv_1x1_weight_tile_buffer_hw[conv_1x1_weight_ptr_hw], conv_1x1_weight_rot_hw);
 			generic_deconv_1x1_hw(	// note the index of shortcut input
 				msb_fmap_tile_buffer_1_hw[c_in], conv_1x1_weight_rot_hw, lsb_fmap_tile_buffer_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_1x1_weight_grad_cal
@@ -3550,7 +3501,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_s2_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[0], // DDR not used
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -3578,7 +3529,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3586,7 +3537,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3610,7 +3561,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3618,7 +3569,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, lsb_fmap_tile_buffer_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3633,7 +3584,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[0], // DDR not used
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -3648,7 +3599,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3656,7 +3607,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3680,7 +3631,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3688,7 +3639,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_rot_hw, lsb_fmap_tile_buffer_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3703,7 +3654,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_0_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_1_hw[c_out], out_buf_t0_hw[0], // DDR not used
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -3718,7 +3669,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_1_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3726,7 +3677,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3750,7 +3701,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_s2_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_0_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {	// input from conv1
@@ -3758,7 +3709,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_0_hw[c_in], conv_3x3_weight_rot_hw, lsb_fmap_tile_buffer_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3775,7 +3726,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 	for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
 		generic_shortcut_hw(
 			msb_fmap_tile_buffer_1_hw[c_out], lsb_fmap_tile_buffer_hw[c_out], msb_fmap_tile_buffer_0_hw[c_out], out_buf_t0_hw[0], // DDR not used
-			H_fmap_out_hw, ctrl_sc_hw, bias_gap4add_hw
+			H_fmap_out_hw, ctrl_sc_hw
 		);
 	}
 
@@ -3800,7 +3751,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 		generic_bn_relu_bp_hw(
 			msb_fmap_tile_buffer_0_hw[c_in], out_buf_t0_hw[ini_hw], relu_mask_hw[ini_hw], msb_fmap_tile_buffer_1_hw[c_in],
 			bn_wt_hw[ini_hw], bn_bias_hw[ini_hw],
-			H_fmap_in_hw, bias_gap4add_hw
+			H_fmap_in_hw
 		);
 
 		for (int c_out = out_channels_after_pack_hw - 1; c_out >= 0; c_out --) {
@@ -3808,7 +3759,7 @@ void FracNet_hw(float image_hw[3][32][32]) {
 			rot180_3x3_hw(conv_3x3_weight_tile_buffer_hw[conv_3x3_weight_ptr_hw], conv_3x3_weight_rot_hw);
 			generic_deconv_3x3_hw(
 				msb_fmap_tile_buffer_1_hw[c_in], conv_3x3_weight_rot_hw, msb_fmap_tile_buffer_s2_hw[c_out], out_buf_t0_hw[ini_hw],
-				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw, bias_gap4add_hw
+				stride_hw, H_fmap_in_hw, H_fmap_out_hw, c_in, ctrl_conv_hw
 			);
 			///////////////////////////
 			// conv_3x3_weight_grad_cal
@@ -3835,13 +3786,6 @@ void load_image_CIFAR100()
 	ifs_param.read((char*)(images), sizeof(unsigned char)*3* EPOCH *32*32);	// first uint8 is label
 	ifs_param.close();
 }
-
-//void load_label()
-//{
-//	std::ifstream ifs_param("labels.bin", std::ios::in | std::ios::binary);
-//	ifs_param.read((char*)(labels), sizeof(unsigned char)*EPOCH);
-//	ifs_param.close();
-//}
 
 void get_image_CIFAR10(unsigned char *images, unsigned int idx, float image[3][32][32])
 {
@@ -3876,42 +3820,35 @@ int main(int argc, char **argv)
 
 	float image_sw[3][32][32];
 	load_image_CIFAR100();
-//	load_image_CIFAR10();
 
 	// run k epochs
 	for (int k = 0; k < EPOCH; k ++) {
 
 		ctrl_tl = 1;
-		cout << "---------------" << " iteration " << k+1 << " ---------------" << endl;
+//		cout << "---------------" << " iteration " << k+1 << " ---------------" << endl;
 
 		////////////////////////////////
 		//////// SOFTWARE //////////////
 		////////////////////////////////
 
 		get_image_CIFAR100(images, 0, image_sw);
-//		get_image_CIFAR10(images, 10, image_sw);
 
-		FracNet_sw(image_sw);
-
-		cout << "loss_sw: " << loss_sw << endl;
-//		for (int i = 0; i < 10; i ++) {
-//			cout << "error_sw: " << error_sw[i] << "  " << endl;
-//		}
+//		FracNet_sw(image_sw);
+//
+//		cout << "loss_sw: " << loss_sw << endl;
 //		cout << "error_sw: " << error_sw[1] << "  " << endl;
-		cout << "" << endl;
-
-		////////////////////////////////
-		//////// HARDWARE //////////////
-		////////////////////////////////
-
-		FracNet_hw(image_sw);
-
-		cout << "loss_hw: " << loss_hw << endl;
-//		for (int i = 0; i < 10; i ++) {
-//			cout << "error_hw: " << error_hw[i] << "  " << endl;
-//		}
+//		cout << "" << endl;
+//
+//		//////////////////////////////
+//		////// HARDWARE //////////////
+//		//////////////////////////////
+//
+//		FracNet_hw(image_sw);
+//
+//		cout << "loss_hw: " << loss_hw << endl;
 //		cout << "error_hw: " << error_hw[1] << "  " << endl;
-		cout << "" << endl;
+//		cout << "" << endl;
+//		}
 
 		////////////////////////////////
 		//////// bm(2, 5) //////////////
@@ -3919,11 +3856,13 @@ int main(int argc, char **argv)
 
 		FracNet_T(image_sw, ctrl_tl, loss_bm, error_bm);
 
-		cout << "loss_bm: " << loss_bm << endl;
-//		for (int i = 0; i < 10; i ++) {
-//			cout << "error_bm: " << error_bm[i] << "  " << endl;
-//		}
+//		cout << "loss_bm: " << loss_bm << endl;
 //		cout << "error_bm: " << error_bm[1] << "  " << endl;
+
+//		cout << loss_bm << ", ";
+//		if ((k+1)%10 == 0) {
+//			cout << " ..."<< endl;
+//		}
 	}
 
 	// run k epochs fune-tuning
@@ -3931,19 +3870,19 @@ int main(int argc, char **argv)
 	for (int k = 0; k < EPOCH; k ++) {
 
 		ctrl_tl = 0;
-		cout << "---------------" << " iteration_tl " << k+1 << " ---------------" << endl;
+//		cout << "---------------" << " iteration_tl " << k+1 << " ---------------" << endl;
 
 		get_image_CIFAR10(images, 10, image_sw);
 
 		FracNet_T(image_sw, ctrl_tl, loss_bm, error_bm);
 
-		cout << "tl_loss_bm: " << loss_bm << endl;
-//		for (int i = 0; i < 10; i ++) {
-//			cout << "tl_error_bm: " << error_bm[i] << "  " << endl;
-//		}
+//		cout << "tl_loss_bm: " << loss_bm << endl;
 //		cout << "tl_error_bm: " << error_bm[1] << "  " << endl;
+		cout << loss_bm << ", ";
+		if ((k+1)%10 == 0) {
+			cout << " ..."<< endl;
+		}
 	}
-
 	return 0;
 }
 

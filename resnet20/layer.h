@@ -17,8 +17,7 @@ using namespace std;
 const uint2 exp_bias = 2;	// ieee-754 shared_exp_bias
 float lr = 0.005; //1e-2;
 float eps = 1e-10;
-//float ee = 2.718281828459;
-float mom = 0; //0.9;
+float mom = 0.9;
 
 //--------------------------------
 // block minifloat qantisation
@@ -161,6 +160,140 @@ void quant_wt
 	//				printf("quant_out[%d][%d][%d] = %f \n", ci, krow, kcol, out[ci][krow][kcol]);
 				}
 			}
+		}
+	}
+
+}
+
+void quant_wt_1x1
+(
+	float input[CHANNEL_OUT_T][CHANNEL_IN_T]
+)
+{
+	float input_tmp[CHANNEL_OUT_T][CHANNEL_IN_T];
+
+	// float exp = 2;
+	// float man = 5;
+	float emax = 1.0;  // 2**(exp)-1 - 2**(exp-1);
+	float emin = -2.0; // -2**(exp-1);
+
+	float max_exponent[CHANNEL_OUT_T] = {0};
+	float offset[CHANNEL_OUT_T] = {0};
+	float shift[CHANNEL_OUT_T] = {0};
+
+	float max_number = 2*(2-1/16); // 2**(emax)*(2-2**(-man));
+	float abs_max[CHANNEL_OUT_T] = {0};
+
+	float esbn = 0.5; 	// 2**(emin+1)
+	float lsbn = 2.0;   // 2**(emax)
+	float mval = 32.0;  // 2**(man)
+
+	float i;
+	float ie;
+	float me;
+	float f;
+	float clipped;
+	float k;
+	float out[CHANNEL_OUT_T][CHANNEL_IN_T];
+
+	float e;
+	float sgn;
+
+	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+		abs_max[co] = 0;
+		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+			if(abs_max[co] < abs(input[co][ci])) {
+				abs_max[co] = input[co][ci];
+			}
+		}
+	}
+
+	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+		max_exponent[co] = float(int(hls::log2(abs_max[co])));
+
+		// clamp
+		if (max_exponent[co] < -128.0) {
+			max_exponent[co] = -128.0;
+		}
+		else if (max_exponent[co] > 127.0) {
+			max_exponent[co] = 127.0;
+		}
+
+		offset[co] = max_exponent[co] - emax;
+//		printf("offset[%d] = %f \n", ci, offset[ci]);
+
+		// shared exponent shifting
+		shift[co] = pow(2, -offset[co]);
+//		printf("shift[%d] = %f \n", ci, shift[ci]);
+	}
+
+	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+
+			// handle subnormal and normal quantization
+			input_tmp[co][ci] = input[co][ci] * shift[co];
+			i = input_tmp[co][ci];
+
+			sgn = (i > 0) ? 1.0 : -1.0;
+			i = abs(i);
+			e = float(int(hls::log2(i)));
+			// clamp the exponent
+			// e.clamp_(emin+1, emax); // emin+1 for subnormal region
+			if (e < -1) {
+				e = -1;
+			}
+			else if (e > 1) {
+				e = 1;
+			}
+
+//				printf("i = %f; e = %f \n", i, e);
+
+			// unpack frac for subnormal and normal region
+			ie = i * pow(2, -e);
+			me = pow(2, e);
+			// f = torch.where(i<esbn, ie, ie-1);
+			if (i < esbn) {
+				f = ie;
+			}
+			else {
+				f = ie - 1;
+			}
+
+//				printf("ie = %f; f = %f \n", ie, f);
+
+			// rounding on frac
+			// f.mul_(mval).round_()
+			f = float(int(f * mval));
+			// clipped.div_(mval).mul_(me)
+			clipped = f/mval * me;
+
+//				printf("clipped = %f \n", clipped);
+
+			// sign magnitude multiplication for subnormal and normal
+			// k = torch.where(i<esbn, clipped, me+clipped)
+			if (i < esbn) {
+				k = clipped;
+			}
+			else {
+				k = me+clipped;
+			}
+
+			// k.clamp_(-max_number, max_number);
+			if (k < -max_number) {
+				k = -max_number;
+			}
+			else if (k > max_number) {
+				k = max_number;
+			}
+
+//			printf("k = %f \n", k);
+
+			out[co][ci] = sgn * k * pow(2, offset[co]);
+
+			// convert to fp32 after quantisation
+			input[co][ci] = out[co][ci];
+
+//			printf("quant_out[%d][%d][%d] = %f \n", ci, krow, kcol, out[ci][krow][kcol]);
 		}
 	}
 
@@ -376,17 +509,18 @@ void conv_3x3
 	int H_fmap_in,
 	int H_fmap_out,
 	int c_in,
-	uint1 ctrl_conv,
-
-	float bias_gap4add[CHANNEL_OUT_T]
+	uint1 ctrl_conv
 )
 {
+// #pragma HLS DEPENDENCE variable=output inter false
+
 	int row_input;
 	int col_input;
 	int row_in;
 	int col_in;
 	float out_temp[CHANNEL_OUT_T];
 	float output_tmp[CHANNEL_OUT_T][WIDTH][WIDTH];
+//#pragma HLS DEPENDENCE variable=out_temp inter false
 //#pragma HLS DEPENDENCE variable=output inter false
 
 #pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
@@ -500,11 +634,11 @@ void conv_1x1
 	int H_fmap_in,
 	int H_fmap_out,
 	int c_in,
-	uint1 ctrl_conv,
-
-	float bias_gap4add[CHANNEL_OUT_T]
+	uint1 ctrl_conv
 )
 {
+// #pragma HLS DEPENDENCE variable=output inter false
+
 	int row_in;
 	int col_in;
 	float act[CHANNEL_IN_T];
@@ -524,9 +658,9 @@ void conv_1x1
 #pragma HLS ARRAY_PARTITION variable=output_DDR dim=1 complete
 
 	for (int row = 0; row < H_fmap_out; row++) {
-// // #pragma HLS LOOP_TRIPCOUNT min = 8 max = 32
+// #pragma HLS LOOP_TRIPCOUNT min = 8 max = 32
 		for (int col = 0; col < H_fmap_out; col++) {
-// // #pragma HLS LOOP_TRIPCOUNT min = 8 max = 32
+// #pragma HLS LOOP_TRIPCOUNT min = 8 max = 32
 #pragma HLS PIPELINE II=1
 			// buffer initiation
 			for (int co = 0; co < CHANNEL_OUT_T; co ++) {
@@ -608,9 +742,8 @@ void conv_3x3_grad
 	float accum;
 	float out_tmp;
 	float out_temp[CHANNEL_OUT_T][CHANNEL_IN_T][3][3] = {0};
-
 #pragma HLS DEPENDENCE variable=out_temp inter false
-#pragma HLS DEPENDENCE variable=vel inter false
+//#pragma HLS DEPENDENCE variable=output inter false
 
 #pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=out_temp dim=2 complete
@@ -700,7 +833,6 @@ void conv_3x3_grad
 							// conv(0, 0)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in - 1 && skip_krow == 0 && skip_kcol == 2) {
 								out_temp[co][cin][0][0] += out_tmp;
-//								printf("out_temp[%d][%d][0][0] = %d \n", co, cin, out_temp[co][cin][0][0].to_int());
 							}
 						}
 					}
@@ -719,7 +851,6 @@ void conv_3x3_grad
 							// conv(0, 1)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in && skip_krow == 0 && skip_kcol == 3) {
 								out_temp[co][cin][0][1] += out_tmp;
-//								printf("out_temp[%d][%d][0][1] = %d \n", co, cin, out_temp[co][cin][0][1].to_int());
 							}
 						}
 					}
@@ -738,7 +869,6 @@ void conv_3x3_grad
 							// conv(0, 2)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 1 && kcol < H_fmap_in + 1 && skip_krow == 0 && skip_kcol == 0) {
 								out_temp[co][cin][0][2] += out_tmp;
-//								printf("out_temp[%d][%d][0][2] = %d \n", co, cin, out_temp[co][cin][0][2].to_int());
 							}
 						}
 					}
@@ -759,7 +889,6 @@ void conv_3x3_grad
 							// conv(1, 0)
 							if (krow >= 0 && krow < H_fmap_in + 1 && kcol >= 0 && kcol < H_fmap_in - 1 && skip_krow == 0 && skip_kcol == 2) {
 								out_temp[co][cin][1][0] += out_tmp;
-//								printf("out_temp[%d][%d][1][0] = %d \n", co, cin, out_temp[co][cin][1][0].to_int());
 							}
 						}
 					}
@@ -778,7 +907,6 @@ void conv_3x3_grad
 							// conv(1, 1)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in && skip_krow == 0 && skip_kcol == 3) {
 								out_temp[co][cin][1][1] += out_tmp;
-//								printf("out_temp[%d][%d][1][1] = %d \n", co, cin, out_temp[co][cin][1][1].to_int());
 							}
 						}
 					}
@@ -818,7 +946,6 @@ void conv_3x3_grad
 							// conv(2, 0)
 							if (krow >= 1 && krow < H_fmap_in + 1 && kcol >= 0 && kcol < H_fmap_in - 1 && skip_krow == 0 && skip_kcol == 2) {
 								out_temp[co][cin][2][0] += out_tmp;
-//								printf("out_temp[%d][%d][2][0] = %d \n", co, cin, out_temp[co][cin][2][0].to_int());
 							}
 						}
 					}
@@ -837,7 +964,6 @@ void conv_3x3_grad
 							// conv(2, 1)
 							if (krow >= 1 && krow < H_fmap_in + 1 && kcol >= 0 && kcol < H_fmap_in && skip_krow == 0 && skip_kcol == 3) {
 								out_temp[co][cin][2][1] += out_tmp;
-//								printf("out_temp[%d][%d][2][1] = %d \n", co, cin, out_temp[co][cin][2][1].to_int());
 							}
 						}
 					}
@@ -856,12 +982,10 @@ void conv_3x3_grad
 							// conv(2, 2)
 							if (krow >= 1 && krow < H_fmap_in + 1 && kcol >= 1 && kcol < H_fmap_in + 1 && skip_krow == 0 && skip_kcol == 0) {
 								out_temp[co][cin][2][2] += out_tmp;
-//								printf("out_temp[%d][%d][2][2] = %d \n", co, cin, out_temp[co][cin][2][2].to_int());
 							}
 
 						}
 					}
-//					printf("\n");
 				}
 			}
 		}
@@ -986,10 +1110,8 @@ void conv_3x3_grad_v2
 							window_buffer_act[cin][i][3] = window_buffer_act[cin][i][4];
 						}
 
-//						row_input = krow + ii*H_fmap_in;
-//						col_input = kcol + jj*H_fmap_in;
-						row_input = krow;
-						col_input = kcol;
+						row_input = krow + ii*H_fmap_in;
+						col_input = kcol + jj*H_fmap_in;
 
 						window_buffer_act[cin][0][4] = (line_buffer_act[cin][0][kcol]);
 						window_buffer_act[cin][1][4] = (line_buffer_act[cin][0][kcol] = line_buffer_act[cin][1][kcol]);
@@ -1070,59 +1192,47 @@ void conv_3x3_grad_v2
 					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 						for (int cin = 0; cin < CHANNEL_IN_T; cin ++) {
 
-//							if (skip_krow == 0) skip = skip_kcol;
-
 							// conv(0,0)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in - 1 && skip == 2) {
-//								out_temp[co][cin][0][0] = bm_add(out_temp[co][cin][0][0], out_tmp[co][cin]);
 								out_temp[co][cin][0][0] += out_tmp[co][cin];
 							}
 							// conv(0, 1)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in && skip == 3) {
-//								out_temp[co][cin][0][1] = bm_add(out_temp[co][cin][0][1], out_tmp[co][cin]);
 								out_temp[co][cin][0][1] += out_tmp[co][cin];
 							}
 							// conv(0,2)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 1 && kcol < H_fmap_in + 1 && skip == 0) {
-//								out_temp[co][cin][0][2] = bm_add(out_temp[co][cin][0][2], out_tmp[co][cin]);
 								out_temp[co][cin][0][2] += out_tmp[co][cin];
 							}
 
 							// conv(1, 0)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in - 1 && skip == 2) {
-//								out_temp[co][cin][1][0] = bm_add(out_temp[co][cin][1][0], out_tmp[co][cin]);
 								out_temp[co][cin][1][0] += out_tmp[co][cin];
 							}
 							// conv(1, 1)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in && skip == 3) {
-//								out_temp[co][cin][1][1] = bm_add(out_temp[co][cin][1][1], out_tmp[co][cin]);
 								out_temp[co][cin][1][1] += out_tmp[co][cin];
 							}
 							// conv(1, 2)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 1 && kcol < H_fmap_in + 1 && skip == 0) {
-//								out_temp[co][cin][1][2] = bm_add(out_temp[co][cin][1][2], out_tmp[co][cin]);
 								out_temp[co][cin][1][2] += out_tmp[co][cin];
 							}
 
 							// conv(2, 0)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in - 1 && skip == 2) {
-//								out_temp[co][cin][2][0] = bm_add(out_temp[co][cin][2][0], out_tmp[co][cin]);
 								out_temp[co][cin][2][0] += out_tmp[co][cin];
 							}
 							// conv(2, 1)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 0 && kcol < H_fmap_in && skip == 3) {
-//								out_temp[co][cin][2][1] = bm_add(out_temp[co][cin][2][1], out_tmp[co][cin]);
 								out_temp[co][cin][2][1] += out_tmp[co][cin];
 							}
 							// conv(2, 2)
 							if (krow >= 0 && krow < H_fmap_in && kcol >= 1 && kcol < H_fmap_in + 1 && skip == 0) {
-//								out_temp[co][cin][2][2] = bm_add(out_temp[co][cin][2][2], out_tmp[co][cin]);
 								out_temp[co][cin][2][2] += out_tmp[co][cin];
 							}
 
 						}
 					}
-//					printf("\n");
 				}
 			}
 		}
@@ -1297,22 +1407,19 @@ void conv_3x3_backward (
 
 	// dilated conv
 	float input_fw[CHANNEL_IN_T][WIDTH][WIDTH],			// activation from DDR
-	// float error[CHANNEL_OUT_T][WIDTH][WIDTH],		// error on-chip
 	float wt_out[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],	// gradient on-chip
 	float vel[CHANNEL_OUT_T][CHANNEL_IN_T][3][3],
 
 	int stride,
 	int H_fmap_in,
 	int H_fmap_out,
-	int c_in,
-
-	float bias_gap4add[CHANNEL_OUT_T]
+	int c_in
 ) {
 #pragma HLS ALLOCATION function instances=conv_3x3 limit=1
 #pragma HLS ALLOCATION function instances=conv_3x3_grad limit=1
 
 #pragma HLS dataflow
-	conv_3x3(input, weight, output, output_DDR, stride, H_fmap_out, H_fmap_in, c_in, 1, bias_gap4add);
+	conv_3x3(input, weight, output, output_DDR, stride, H_fmap_out, H_fmap_in, c_in, 1);
 	conv_3x3_grad_v2(input_fw, input_copy, wt_out, vel, 1, stride, H_fmap_in);
 }
 
@@ -1326,22 +1433,19 @@ void conv_1x1_backward (
 
 	// dilated conv
 	float input_fw[CHANNEL_IN_T][WIDTH][WIDTH],			// activation from DDR
-	// float error[CHANNEL_OUT_T][WIDTH][WIDTH],		// error on-chip
-	float wt_out[CHANNEL_OUT_T][CHANNEL_IN_T],					// gradient on-chip
+	float wt_out[CHANNEL_OUT_T][CHANNEL_IN_T],			// gradient on-chip
 	float vel[CHANNEL_OUT_T][CHANNEL_IN_T],
 
 	int stride,
 	int H_fmap_in,
 	int H_fmap_out,
-	int c_in,
-
-	float bias_gap4add[CHANNEL_OUT_T]
+	int c_in
 ) {
 #pragma HLS ALLOCATION function instances=conv_1x1 limit=1
 #pragma HLS ALLOCATION function instances=conv_1x1_grad limit=1
 
 #pragma HLS dataflow
-	conv_1x1(input, weight, output, output_DDR, stride, H_fmap_out, H_fmap_in, c_in, 1, bias_gap4add);
+	conv_1x1(input, weight, output, output_DDR, stride, H_fmap_out, H_fmap_in, c_in, 1);
 	conv_1x1_grad(input_fw, input_copy, wt_out, vel, 1, stride, H_fmap_in);
 }
 
@@ -1354,8 +1458,7 @@ void avgpool(
 	int c_out,
 
 	float out_buf_SC[CHANNEL_IN_T][WIDTH][WIDTH],
-	float out_buf_copy[64],
-	float bias_gap4add[CHANNEL_IN_T]
+	float out_buf_copy[64]
 )
 {
 	// forward
@@ -1440,15 +1543,9 @@ void shortcut(
 	float input_b[CHANNEL_OUT_T][WIDTH][WIDTH],			// in2
 	float out_buf[CHANNEL_OUT_T][WIDTH][WIDTH],			// out
 	float out_buf_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, off-chip
-//	float out_buf_SC[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, ideneity for shortcut
 
 	int H_fmap_in,
-	uint1 ctrl_sc,										// if ctrl_sc=0, generate and send out_copy into DDR
-//	uint1 ctrl_sc_id,
-
-//	float shared_exp_bias[CHANNEL_OUT_T],
-	float bias_gap4add[CHANNEL_OUT_T]
-//	float act_bias_shift[CHANNEL_OUT_T]
+	uint1 ctrl_sc										// if ctrl_sc=0, generate and send out_copy into DDR
 )
 {
 	for (int row = 0; row < H_fmap_in; row ++) {
@@ -1472,10 +1569,7 @@ void bn(
 	float bn_wt[CHANNEL_OUT_T],
 	float bn_bias[CHANNEL_OUT_T],
 
-    int H_fmap_in,
-//	float shared_exp_bias[CHANNEL_OUT_T],
-	float bias_gap4add[CHANNEL_OUT_T]
-//	float act_bias_shift[CHANNEL_OUT_T]
+    int H_fmap_in
 )
 {
 	int N = H_fmap_in * H_fmap_in;
@@ -1483,7 +1577,6 @@ void bn(
 #pragma HLS ARRAY_PARTITION variable=bn_bias dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=mu dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=std_var dim=1 complete
-#pragma HLS ARRAY_PARTITION variable=bias_gap4add dim=1 complete
 
 	uint1 relu_temp[CHANNEL_OUT_T] = {0};
 	float in_temp[CHANNEL_OUT_T] = {0};
@@ -1535,7 +1628,6 @@ void bn(
 
 			// buffer init
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-				// in_temp[c] = bn_inputs[c][row][col];
 				in_temp[c] = bn_inputs[c][row][col];
 			}
 			// bn + relu
@@ -1566,8 +1658,7 @@ void bn_bp(
 
 	uint1 ctrl_frz,
 
-	int H_fmap_in,
-	float bias_gap4add[CHANNEL_OUT_T]
+	int H_fmap_in
 )
 {
 	int N = H_fmap_in * H_fmap_in;
@@ -1597,8 +1688,6 @@ void bn_bp(
 #pragma HLS ARRAY_PARTITION variable=bn_inputs_fw dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=out_buf dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=out_buf_copy dim=1 complete
-
-#pragma HLS ARRAY_PARTITION variable=bias_gap4add dim=1 complete
 
 #pragma HLS ARRAY_PARTITION variable=vel_wt dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=vel_bias dim=1 complete
@@ -1680,16 +1769,11 @@ void bn_relu(
 
 	float out_buf_DDR[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, off-chip for backprop
 	uint1 relu_mask[CHANNEL_OUT_T][WIDTH][WIDTH],		// out, relu_mask for relu_bp
-//	float out_buf_SC[CHANNEL_OUT_T][WIDTH][WIDTH],		// out_copy, ideneity for shortcut
 
 	float bn_wt[CHANNEL_OUT_T],
 	float bn_bias[CHANNEL_OUT_T],
 
-    int H_fmap_in,
-//	uint1 ctrl_bn_id,
-
-	float bias_gap4add[CHANNEL_OUT_T]
-//	float act_bias_shift
+    int H_fmap_in
 )
 {
 	int N = H_fmap_in * H_fmap_in;
@@ -1697,7 +1781,6 @@ void bn_relu(
 #pragma HLS ARRAY_PARTITION variable=bn_bias dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=mu dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=std_var dim=1 complete
-#pragma HLS ARRAY_PARTITION variable=bias_gap4add dim=1 complete
 
 	uint1 relu_temp[CHANNEL_OUT_T] = {0};
 	float in_temp[CHANNEL_OUT_T] = {0};
@@ -1757,7 +1840,6 @@ void bn_relu(
 
 			// buffer init
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
-				// in_temp[c] = bn_inputs[c][row][col];
 				in_temp[c] = bn_inputs[c][row][col];
 			}
 			// bn + relu
@@ -1790,9 +1872,7 @@ void bn_relu_bp(
 	float vel_bias[CHANNEL_OUT_T],
 
 	uint1 ctrl_frz,
-
-	int H_fmap_in,
-	float bias_gap4add[CHANNEL_OUT_T]
+	int H_fmap_in
 )
 {
 	int N = H_fmap_in * H_fmap_in;
@@ -1823,8 +1903,6 @@ void bn_relu_bp(
 #pragma HLS ARRAY_PARTITION variable=relu_mask dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=out_buf dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=out_buf_copy dim=1 complete
-
-#pragma HLS ARRAY_PARTITION variable=bias_gap4add dim=1 complete
 
 #pragma HLS ARRAY_PARTITION variable=vel_wt dim=1 complete
 #pragma HLS ARRAY_PARTITION variable=vel_bias dim=1 complete
@@ -1862,7 +1940,6 @@ void bn_relu_bp(
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				in_temp[c] = bn_inputs_fw[c][row][col];
 				error_temp[c] = (relu_mask[c][row][col] == 1) ? error[c][row][col] : float(0);
-//				error[c][row][col] = (relu_mask[c][row][col] == 1) ? error[c][row][col] : float(0);
 			}
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				g_bn_bias[c] += error_temp[c];

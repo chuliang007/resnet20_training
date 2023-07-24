@@ -7,11 +7,11 @@
 
 using namespace std;
 
-static float msb_fmap_tile_buffer_0[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
-static float msb_fmap_tile_buffer_1[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
-static float msb_fmap_tile_buffer_2[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
-static float msb_fmap_tile_buffer_dataflow[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];	// activation/error on-chip
-static float lsb_fmap_tile_buffer[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];	// shortcut activation/error on-chip
+static float msb_fmap_tile_buffer_0[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];
+static float msb_fmap_tile_buffer_1[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];
+static float msb_fmap_tile_buffer_2[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];
+static float msb_fmap_tile_buffer_dataflow[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];
+static float lsb_fmap_tile_buffer[NUM_TILE][CHANNEL_IN_T][WIDTH][WIDTH];
 
 static float out_buf_t0[NUM_ACT][CHANNEL_OUT_T][WIDTH][WIDTH];				// conv output
 static float out_buf_t1[NUM_ACT][CHANNEL_OUT_T][WIDTH][WIDTH];				// bn output
@@ -23,24 +23,11 @@ static float conv_3x3_weight_rot[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
 static float conv_1x1_weight_rot[CHANNEL_OUT_T][CHANNEL_IN_T];
 
 static float pool_out_buf[64];
-static float pool_out_buf_copy[64];	// avgpool buffer
+static float pool_out_buf_copy[64];
 //static float linear_weight_tile_buffer[10][64];
 //static float linear_bias[10];
 static float linear_out_buf[10];											// FC buffer
-
 static float sum;
-//static float labels[10];
-
-//static float bn_wt[NUM_ACT][CHANNEL_OUT_T];								// bn weight
-//static float bn_bias[NUM_ACT][CHANNEL_OUT_T];								// bn bias
-//static float mu[NUM_ACT][CHANNEL_OUT_T];									// bn input mu
-//static float std_var[NUM_ACT][CHANNEL_OUT_T];								// bn input standard variance
-
-//static float act_bias[ACT_BIAS][CHANNEL_OUT_T];							// activation's shared exponent bias of block minifloat
-//static float wt_bias[WT_BIAS][CHANNEL_OUT_T];								// weight's shared exponent bias of block minifloat
-//static float wt_bias_1x1[WT_BIAS_1x1][CHANNEL_OUT_T];						// weight's shared exponent bias of block minifloat
-//static float act_bias_shift[ACT_BIAS][CHANNEL_OUT_T];						// used for activation's shared exponent bias update
-static float bias_gap4add[CHANNEL_OUT_T];									// shared exponent gap between act & wt in bm addition
 
 //--------------------
 //  Top Function 
@@ -68,8 +55,8 @@ void FracNet_T(
 
 #pragma HLS ALLOCATION function instances=conv_3x3 limit=1
 #pragma HLS ALLOCATION function instances=conv_1x1 limit=1
-#pragma HLS ALLOCATION function instances=conv_3x3_backward limit=1
-#pragma HLS ALLOCATION function instances=conv_1x1_backward limit=1
+#pragma HLS ALLOCATION function instances=conv_3x3_grad limit=1
+#pragma HLS ALLOCATION function instances=conv_1x1_grad limit=1
 
 	int H_fmap_in, H_fmap_out, in_channels, out_channels, in_channels_after_pack, out_channels_after_pack;
     int stride, conv_3x3_weight_ptr, conv_1x1_weight_ptr, fc_weight_ptr, ini, ini_copy, ini_act_bias, ini_wt_bias;
@@ -138,7 +125,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_2[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -148,7 +135,7 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_0[c_out], msb_fmap_tile_buffer_1[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
 		// block minifloat quant
@@ -184,7 +171,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -194,7 +181,7 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_0[c_out], msb_fmap_tile_buffer_2[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
 		// block minifloat quant
@@ -216,7 +203,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_2[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -226,10 +213,10 @@ void FracNet_T(
 		bn_relu(	// MODIFIED HERE!
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(lsb_fmap_tile_buffer[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -239,7 +226,7 @@ void FracNet_T(
 		ini_copy += 1;
 		shortcut(
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_0[c_out], out_buf_t1[ini_copy],
-			H_fmap_out, ctrl_sc, bias_gap4add	// generate and send out_copy into DDR
+			H_fmap_out, ctrl_sc	// generate and send out_copy into DDR
 		);
 	}
 
@@ -256,7 +243,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_1[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -266,10 +253,10 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_1[c_out], msb_fmap_tile_buffer_2[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(msb_fmap_tile_buffer_2[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -288,7 +275,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_2[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_1[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -298,10 +285,10 @@ void FracNet_T(
 		bn_relu(	// MODIFIED HERE!
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(lsb_fmap_tile_buffer[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -311,7 +298,7 @@ void FracNet_T(
 		ini_copy += 1;
 		shortcut(
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_1[c_out], out_buf_t1[ini_copy],
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -328,7 +315,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -338,7 +325,7 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_0[c_out], msb_fmap_tile_buffer_2[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
 		// block minifloat quant
@@ -360,7 +347,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_2[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -370,10 +357,10 @@ void FracNet_T(
 		bn_relu(	// MODIFIED HERE!
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(lsb_fmap_tile_buffer[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -383,7 +370,7 @@ void FracNet_T(
 		ini_copy += 1;
 		shortcut(
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_0[c_out], out_buf_t1[ini_copy],
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -414,20 +401,21 @@ void FracNet_T(
 			conv_1x1_weight_ptr += 1;
 			conv_1x1(
 				msb_fmap_tile_buffer_0[c_in], conv_1x1_weight_tile_buffer[conv_1x1_weight_ptr], msb_fmap_tile_buffer_1[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
+			quant_wt_1x1(conv_1x1_weight_tile_buffer[conv_1x1_weight_ptr]);
 			quant_act(msb_fmap_tile_buffer_1[c_out], H_fmap_out);
 			quant_act(out_buf_t0[ini], H_fmap_out);
 		}
 		bn(
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], out_buf_t1[ini], // conv+bn shortcut
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
-		// // quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
+		// block minifloat quant
+		// quant_wt_1x1(conv_1x1_weight_tile_buffer[conv_1x1_weight_ptr]);
 		// quant_act(lsb_fmap_tile_buffer[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
 		quant_act(out_buf_t1[ini], H_fmap_out);
@@ -446,7 +434,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_1[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -456,10 +444,10 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_1[c_out], msb_fmap_tile_buffer_2[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(msb_fmap_tile_buffer_2[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -491,7 +479,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_2[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_1[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -501,10 +489,10 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_1[c_out], msb_fmap_tile_buffer_0[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(msb_fmap_tile_buffer_0[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -514,7 +502,7 @@ void FracNet_T(
 		ini_copy += 1;
 		shortcut(
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_1[c_out], out_buf_t1[ini_copy],
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -531,7 +519,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -541,10 +529,10 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_0[c_out], msb_fmap_tile_buffer_2[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(msb_fmap_tile_buffer_2[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -563,7 +551,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_2[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -573,10 +561,10 @@ void FracNet_T(
 		bn_relu(	// MODIFIED HERE
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(lsb_fmap_tile_buffer[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -586,7 +574,7 @@ void FracNet_T(
 		ini_copy += 1;
 		shortcut(
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_0[c_out], out_buf_t1[ini_copy],
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -603,7 +591,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_1[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -613,10 +601,10 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_1[c_out], msb_fmap_tile_buffer_2[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(msb_fmap_tile_buffer_2[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -635,7 +623,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_2[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_1[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -645,10 +633,10 @@ void FracNet_T(
 		bn_relu(	// MODIFIED HERE
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(lsb_fmap_tile_buffer[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -658,7 +646,7 @@ void FracNet_T(
 		ini_copy += 1;
 		shortcut(
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_1[c_out], out_buf_t1[ini_copy],
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -687,20 +675,21 @@ void FracNet_T(
 			conv_1x1_weight_ptr += 1;
 			conv_1x1(
 				msb_fmap_tile_buffer_1[c_in], conv_1x1_weight_tile_buffer[conv_1x1_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
+			quant_wt_1x1(conv_1x1_weight_tile_buffer[conv_1x1_weight_ptr]);
 			quant_act(msb_fmap_tile_buffer_0[c_out], H_fmap_out);
 			quant_act(out_buf_t0[ini], H_fmap_out);
 		}
 		bn(
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out],	 out_buf_t1[ini], // conv+bn shortcut
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
-		// // quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
+		// block minifloat quant
+		// quant_wt_1x1(conv_1x1_weight_tile_buffer[conv_1x1_weight_ptr]);
 		// quant_act(lsb_fmap_tile_buffer[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
 		quant_act(out_buf_t1[ini], H_fmap_out);
@@ -719,7 +708,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -729,10 +718,10 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_0[c_out], msb_fmap_tile_buffer_2[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(msb_fmap_tile_buffer_2[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -764,7 +753,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_2[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -774,10 +763,10 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_0[c_out], msb_fmap_tile_buffer_1[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(msb_fmap_tile_buffer_1[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -787,7 +776,7 @@ void FracNet_T(
 		ini_copy += 1;
 		shortcut(
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_0[c_out], out_buf_t1[ini_copy],
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -804,7 +793,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_1[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -814,10 +803,10 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_1[c_out], msb_fmap_tile_buffer_2[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(msb_fmap_tile_buffer_2[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -836,7 +825,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_2[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_1[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -846,10 +835,10 @@ void FracNet_T(
 		bn_relu(	// MODIFIED HERE
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(lsb_fmap_tile_buffer[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -859,7 +848,7 @@ void FracNet_T(
 		ini_copy += 1;
 		shortcut(
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_1[c_out], out_buf_t1[ini],
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -876,7 +865,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -886,10 +875,10 @@ void FracNet_T(
 		bn_relu(
 			msb_fmap_tile_buffer_0[c_out], msb_fmap_tile_buffer_2[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(msb_fmap_tile_buffer_2[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -908,7 +897,7 @@ void FracNet_T(
 			conv_3x3_weight_ptr += 1;
 			conv_3x3(
 				msb_fmap_tile_buffer_2[c_in], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], msb_fmap_tile_buffer_0[c_out], out_buf_t0[ini],
-				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in, ctrl_conv
 			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -918,10 +907,10 @@ void FracNet_T(
 		bn_relu(	// MODIFIED HERE
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out], out_buf_t1[ini], relu_mask[ini],
 			bn_wt[ini], bn_bias[ini],
-			H_fmap_out, bias_gap4add
+			H_fmap_out
 		);
 
-		// // block minifloat quant
+		// block minifloat quant
 		// quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		// quant_act(lsb_fmap_tile_buffer[c_out], H_fmap_out);
 		// quant_act(out_buf_t0[ini], H_fmap_out);
@@ -931,7 +920,7 @@ void FracNet_T(
 		ini_copy += 1;
 		shortcut(
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_0[c_out], out_buf_t1[ini_copy],
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -943,7 +932,7 @@ void FracNet_T(
 	LOOP_AvgPool:
 	for (int c_out = 0; c_out < out_channels_after_pack; c_out ++) {
 		avgpool(
-			msb_fmap_tile_buffer_0[c_out], pool_out_buf, ctrl_avgpool, c_out, lsb_fmap_tile_buffer[c_out], pool_out_buf_copy, bias_gap4add
+			msb_fmap_tile_buffer_0[c_out], pool_out_buf, ctrl_avgpool, c_out, lsb_fmap_tile_buffer[c_out], pool_out_buf_copy
 		);
 	}
 
@@ -1019,7 +1008,7 @@ void FracNet_T(
 	LOOP_AvgPool_bp:
 	for (int c_out = 0; c_out < out_channels_after_pack; c_out ++) {
 		avgpool(
-			msb_fmap_tile_buffer_1[c_out], pool_out_buf, ctrl_avgpool, c_out, lsb_fmap_tile_buffer[c_out], pool_out_buf_copy, bias_gap4add
+			msb_fmap_tile_buffer_1[c_out], pool_out_buf, ctrl_avgpool, c_out, lsb_fmap_tile_buffer[c_out], pool_out_buf_copy
 		);
 	}
 
@@ -1056,7 +1045,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_1[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1066,11 +1055,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1103,7 +1092,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_2[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1112,11 +1101,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(	// MODIFIED HERE
 //				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1134,7 +1123,7 @@ void FracNet_T(
 	for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
 		shortcut(
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_0[c_out], out_buf_t0[0],
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -1157,7 +1146,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_0[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
 			conv_3x3_weight_ptr -= 1;
@@ -1165,11 +1154,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1202,7 +1191,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_2[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1211,11 +1200,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(	// MODIFIED HERE
 //				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1233,7 +1222,7 @@ void FracNet_T(
 	for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
 		shortcut(
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_1[c_out], out_buf_t0[0], // DDR not used
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -1254,7 +1243,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_1[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {	// stride-2 input
@@ -1263,11 +1252,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1315,7 +1304,7 @@ void FracNet_T(
 		bn_relu_bp(
 			lsb_fmap_tile_buffer[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1324,11 +1313,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[0],
 				out_buf_t1[ini - 3*out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1355,7 +1344,7 @@ void FracNet_T(
 		// conv_1x1_weight_ptr -= 1;
 
 		// block minifloat quant
-//		quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
+		quant_wt_1x1(conv_1x1_weight_tile_buffer[conv_1x1_weight_ptr]);
 		quant_act(msb_fmap_tile_buffer_1[c_in], H_fmap_in);
 		// quant_act(out_buf_t0[ini], H_fmap_in);
 		// quant_act(out_buf_t1[ini], H_fmap_in);
@@ -1363,7 +1352,7 @@ void FracNet_T(
 		bn_bp(
 			msb_fmap_tile_buffer_1[c_in], out_buf_t0[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],	// conv+bn shortcut
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1372,11 +1361,11 @@ void FracNet_T(
 			conv_1x1_backward(
 				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_1x1_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_1x1_weight_tile_buffer[conv_1x1_weight_ptr], vel_conv_1x1[conv_1x1_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_1x1(	// note the index of shortcut input
 //				msb_fmap_tile_buffer_0[c_in], conv_1x1_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			// quant_wt(conv_1x1_weight_tile_buffer[conv_1x1_weight_ptr]);
@@ -1397,7 +1386,7 @@ void FracNet_T(
 	for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
 		shortcut(
 			msb_fmap_tile_buffer_2[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_0[c_out], out_buf_t0[0], // DDR not used
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -1430,7 +1419,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_0[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1439,11 +1428,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1476,7 +1465,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_2[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1485,11 +1474,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1507,7 +1496,7 @@ void FracNet_T(
 	for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
 		shortcut(
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_1[c_out], out_buf_t0[0], // DDR not used
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -1527,7 +1516,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_1[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1536,11 +1525,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1573,7 +1562,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_2[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1582,11 +1571,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1604,7 +1593,7 @@ void FracNet_T(
 	for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
 		shortcut(
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_0[c_out], out_buf_t0[0],  // DDR not used
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -1625,7 +1614,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_0[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1634,11 +1623,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1685,7 +1674,7 @@ void FracNet_T(
 		bn_relu_bp(
 			lsb_fmap_tile_buffer[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {	// stride-2 input
@@ -1694,11 +1683,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[0],
 				out_buf_t1[ini - 3*out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1725,7 +1714,7 @@ void FracNet_T(
 		// conv_1x1_weight_ptr -= 1;
 
 		// block minifloat quant
-//		quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
+		quant_wt_1x1(conv_1x1_weight_tile_buffer[conv_1x1_weight_ptr]);
 		quant_act(msb_fmap_tile_buffer_0[c_in], H_fmap_in);
 		// quant_act(out_buf_t0[ini], H_fmap_in);
 		// quant_act(out_buf_t1[ini], H_fmap_in);
@@ -1733,7 +1722,7 @@ void FracNet_T(
 		bn_bp(
 			msb_fmap_tile_buffer_0[c_in], out_buf_t0[ini], msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in],	// conv+bn shortcut
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {	// stride-2 input
@@ -1742,11 +1731,11 @@ void FracNet_T(
 			conv_1x1_backward(
 				msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_1x1_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_1x1_weight_tile_buffer[conv_1x1_weight_ptr], vel_conv_1x1[conv_1x1_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_1x1(	// note the index of shortcut input
 //				msb_fmap_tile_buffer_1[c_in], conv_1x1_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_1x1_weight_ptr]);
@@ -1767,7 +1756,7 @@ void FracNet_T(
 	for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
 		shortcut(
 			msb_fmap_tile_buffer_2[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_1[c_out], out_buf_t0[0], // DDR not used
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -1801,7 +1790,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_1[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1810,11 +1799,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1847,7 +1836,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_2[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1856,11 +1845,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1878,7 +1867,7 @@ void FracNet_T(
 	for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
 		shortcut(
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_0[c_out], out_buf_t0[0], // DDR not used
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -1899,7 +1888,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_0[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1908,11 +1897,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1945,7 +1934,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_2[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -1954,11 +1943,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -1976,7 +1965,7 @@ void FracNet_T(
 	for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
 		shortcut(
 			msb_fmap_tile_buffer_0[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_1[c_out], out_buf_t0[0], // DDR not used
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -1997,7 +1986,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_1[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -2006,11 +1995,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -2043,7 +2032,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_2[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {	// input from conv1
@@ -2052,11 +2041,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_rot, lsb_fmap_tile_buffer[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
@@ -2076,7 +2065,7 @@ void FracNet_T(
 	for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
 		shortcut(
 			msb_fmap_tile_buffer_1[c_out], lsb_fmap_tile_buffer[c_out], msb_fmap_tile_buffer_0[c_out], out_buf_t0[0], // DDR not used
-			H_fmap_out, ctrl_sc, bias_gap4add
+			H_fmap_out, ctrl_sc
 		);
 	}
 
@@ -2107,7 +2096,7 @@ void FracNet_T(
 		bn_relu_bp(
 			msb_fmap_tile_buffer_0[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in],
 			bn_wt[ini], bn_bias[ini], vel_bn_wt[ini], vel_bn_bias[ini], ctrl_frz,
-			H_fmap_in, bias_gap4add
+			H_fmap_in
 		);
 
 		for (int c_out = out_channels_after_pack - 1; c_out >= 0; c_out --) {
@@ -2116,11 +2105,11 @@ void FracNet_T(
 			conv_3x3_backward(
 				msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[0],
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
-				stride, H_fmap_in, H_fmap_out, c_in, bias_gap4add
+				stride, H_fmap_in, H_fmap_out, c_in
 			);
 //			conv_3x3(
 //				msb_fmap_tile_buffer_1[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_2[c_out], out_buf_t0[ini],
-//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv, bias_gap4add
+//				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
 			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
