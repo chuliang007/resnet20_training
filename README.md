@@ -4,7 +4,7 @@ The repo describes an HLS-based CNN training accelerator in floating-point forma
 
 ## Structure  
 
-**Pytorch**- Verification of back-propagation derivatives, including Conv, transposed Conv, dilated Conv, BN, ReLU, average pooling, and FC.  
+**pytorch**- Verification of back-propagation derivatives, including Conv, transposed Conv, dilated Conv, BN, ReLU, average pooling, and FC.  
 
 > ```BP_function.py``` <br>
 > ```fc_test.py``` <br>
