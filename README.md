@@ -1,6 +1,6 @@
 # CNN training using block minifloat
 
-The anonymous link describes an HLS-based CNN training accelerator using the back-propagation algorithm with the SGD optimiser. The current open-source code is in floating-point format for a reference design of the CNN training accelerator.
+The repo describes an HLS-based CNN training accelerator using the back-propagation algorithm with the SGD optimiser. The current open-source code is in floating-point format for a reference design of the CNN training accelerator.
 
 ## Structure  
 
