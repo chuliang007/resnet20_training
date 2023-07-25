@@ -17,7 +17,7 @@ The repo describes an HLS-based CNN training accelerator in floating-point forma
 >> ```conv_weights.h``` <br>
 >> ```dimension_def.h``` <br> 
 >> ```layer.h``` <br>
->> ```resnet20.cc``` <br>
+>> ```resnet20.cc``` or  ```vgg.cc```<br>
 >> ```typedefs.h``` <br>
 
 > testbench files
