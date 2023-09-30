@@ -436,8 +436,8 @@ void FracNet_T(
 		// block minifloat quant
 		quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		quant_act(msb_fmap_tile_buffer_1[c_in], H_fmap_out);
-		quant_act(out_buf_t0[ini], H_fmap_out);
-		quant_act(out_buf_t1[ini], H_fmap_out);
+//		quant_act(out_buf_t0[ini], H_fmap_out);
+//		quant_act(out_buf_t1[ini], H_fmap_out);
 
 		bn_relu_bp(
 			msb_fmap_tile_buffer_1[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
@@ -454,6 +454,7 @@ void FracNet_T(
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
 				stride, H_fmap_in, H_fmap_out, c_in
 			);
+			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 			quant_act(msb_fmap_tile_buffer_2[c_out], H_fmap_out);
 //			conv_3x3(
@@ -495,8 +496,8 @@ void FracNet_T(
 		// block minifloat quant
 		quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		quant_act(msb_fmap_tile_buffer_2[c_in], H_fmap_out);
-		quant_act(out_buf_t0[ini], H_fmap_out);
-		quant_act(out_buf_t1[ini], H_fmap_out);
+//		quant_act(out_buf_t0[ini], H_fmap_out);
+//		quant_act(out_buf_t1[ini], H_fmap_out);
 
 		bn_relu_bp(
 			msb_fmap_tile_buffer_2[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
@@ -513,9 +514,10 @@ void FracNet_T(
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
 				stride, H_fmap_in, H_fmap_out, c_in
 			);
+			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 			quant_act(msb_fmap_tile_buffer_1[c_out], H_fmap_out);
-//			conv_3x3(	// MODIFIED HERE
+//			conv_3x3(
 //				msb_fmap_tile_buffer_0[c_in], conv_3x3_weight_rot, msb_fmap_tile_buffer_1[c_out], out_buf_t0[ini],
 //				stride, H_fmap_out, H_fmap_in, c_in, ctrl_conv
 //			);
@@ -541,8 +543,8 @@ void FracNet_T(
 		// block minifloat quant
 		quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		quant_act(msb_fmap_tile_buffer_1[c_in], H_fmap_out);
-		quant_act(out_buf_t0[ini], H_fmap_out);
-		quant_act(out_buf_t1[ini], H_fmap_out);
+//		quant_act(out_buf_t0[ini], H_fmap_out);
+//		quant_act(out_buf_t1[ini], H_fmap_out);
 
 		bn_relu_bp(
 			msb_fmap_tile_buffer_1[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
@@ -559,6 +561,7 @@ void FracNet_T(
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
 				stride, H_fmap_in, H_fmap_out, c_in
 			);
+			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 			quant_act(msb_fmap_tile_buffer_2[c_out], H_fmap_out);
 //			conv_3x3(
@@ -604,8 +607,8 @@ void FracNet_T(
 		// block minifloat quant
 		quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		quant_act(msb_fmap_tile_buffer_2[c_in], H_fmap_out);
-		quant_act(out_buf_t0[ini], H_fmap_out);
-		quant_act(out_buf_t1[ini], H_fmap_out);
+//		quant_act(out_buf_t0[ini], H_fmap_out);
+//		quant_act(out_buf_t1[ini], H_fmap_out);
 
 		bn_relu_bp(
 			msb_fmap_tile_buffer_2[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
@@ -622,6 +625,7 @@ void FracNet_T(
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
 				stride, H_fmap_in, H_fmap_out, c_in
 			);
+			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 			quant_act(msb_fmap_tile_buffer_1[c_out], H_fmap_out);
 //			conv_3x3(
@@ -665,8 +669,8 @@ void FracNet_T(
 		// block minifloat quant
 		quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		quant_act(msb_fmap_tile_buffer_1[c_in], H_fmap_out);
-		quant_act(out_buf_t0[ini], H_fmap_out);
-		quant_act(out_buf_t1[ini], H_fmap_out);
+//		quant_act(out_buf_t0[ini], H_fmap_out);
+//		quant_act(out_buf_t1[ini], H_fmap_out);
 
 		bn_relu_bp(
 			msb_fmap_tile_buffer_1[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_0[c_in], msb_fmap_tile_buffer_dataflow[c_in],
@@ -683,6 +687,7 @@ void FracNet_T(
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
 				stride, H_fmap_in, H_fmap_out, c_in
 			);
+			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 			quant_act(msb_fmap_tile_buffer_2[c_out], H_fmap_out);
 //			conv_3x3(	// MODIFIED HERE
@@ -722,8 +727,8 @@ void FracNet_T(
 		// block minifloat quant
 		quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 		quant_act(msb_fmap_tile_buffer_2[c_in], H_fmap_out);
-		quant_act(out_buf_t0[ini], H_fmap_out);
-		quant_act(out_buf_t1[ini], H_fmap_out);
+//		quant_act(out_buf_t0[ini], H_fmap_out);
+//		quant_act(out_buf_t1[ini], H_fmap_out);
 
 		bn_relu_bp(
 			msb_fmap_tile_buffer_2[c_in], out_buf_t0[ini], relu_mask[ini], msb_fmap_tile_buffer_1[c_in], msb_fmap_tile_buffer_dataflow[c_in],
@@ -739,6 +744,7 @@ void FracNet_T(
 				out_buf_t1[ini - out_channels/CHANNEL_OUT_T + 1], conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr], vel_conv_3x3[conv_3x3_weight_ptr],
 				stride, H_fmap_in, H_fmap_out, c_in
 			);
+			// block minifloat quant
 			quant_wt(conv_3x3_weight_tile_buffer[conv_3x3_weight_ptr]);
 			quant_act(msb_fmap_tile_buffer_0[c_out], H_fmap_out);
 //			conv_3x3(
