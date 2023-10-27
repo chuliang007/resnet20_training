@@ -20,6 +20,291 @@ float eps = 1e-10;
 float mom = 0.9;
 
 //--------------------------------
+// block minifloat qantisation
+//--------------------------------
+
+void quant_wt
+(
+	float input[CHANNEL_OUT_T][CHANNEL_IN_T][3][3]
+)
+{
+	float input_tmp[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
+
+	// float exp = 2;
+	// float man = 5;
+	float emax = 1.0;  // 2**(exp)-1 - 2**(exp-1);
+	float emin = -2.0; // -2**(exp-1);
+
+	float max_exponent[CHANNEL_OUT_T] = {0};
+	float offset[CHANNEL_OUT_T] = {0};
+	float shift[CHANNEL_OUT_T] = {0};
+
+	float max_number = 2*(2-1/16); // 2**(emax)*(2-2**(-man));
+	float abs_max[CHANNEL_OUT_T] = {0};
+
+	float esbn = 0.5; 	// 2**(emin+1)
+	float lsbn = 2.0;   // 2**(emax)
+	float mval = 32.0;  // 2**(man)
+	
+	float i;
+	float ie;
+	float me; 
+	float f;
+	float clipped;
+	float k;
+	float out[CHANNEL_OUT_T][CHANNEL_IN_T][WIDTH][WIDTH];
+
+	float e;
+	float sgn;
+
+	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+		abs_max[co] = 0;
+		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+			for (int krow = 0; krow < 3; krow ++) {
+				for (int kcol = 0; kcol < 3; kcol ++) {
+					if(abs_max[co] < abs(input[co][ci][krow][kcol])) {
+						abs_max[co] = input[co][ci][krow][kcol];
+					}
+				}
+			}
+		}
+	}
+
+	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+		max_exponent[co] = float(int(hls::log2(abs_max[co])));
+
+		// clamp
+		if (max_exponent[co] < -128.0) {
+			max_exponent[co] = -128.0;
+		}
+		else if (max_exponent[co] > 127.0) {
+			max_exponent[co] = 127.0;
+		}
+
+		offset[co] = max_exponent[co] - emax;
+//		printf("offset[%d] = %f \n", ci, offset[ci]);
+
+		// shared exponent shifting
+		shift[co] = pow(2, -offset[co]);
+//		printf("shift[%d] = %f \n", ci, shift[ci]);
+	}
+
+	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+			for (int krow = 0; krow < 3; krow ++) {
+				for (int kcol = 0; kcol < 3; kcol ++) {
+
+					// handle subnormal and normal quantization
+					input_tmp[co][ci][krow][kcol] = input[co][ci][krow][kcol] * shift[co];
+					i = input_tmp[co][ci][krow][kcol];
+
+					sgn = (i > 0) ? 1.0 : -1.0;
+					i = abs(i);
+					e = float(int(hls::log2(i)));
+					// clamp the exponent
+					// e.clamp_(emin+1, emax); // emin+1 for subnormal region
+					if (e < -1) {
+						e = -1;
+					}
+					else if (e > 1) {
+						e = 1;
+					}
+
+	//				printf("i = %f; e = %f \n", i, e);
+
+					// unpack frac for subnormal and normal region
+					ie = i * pow(2, -e);
+					me = pow(2, e);
+					// f = torch.where(i<esbn, ie, ie-1);
+					if (i < esbn) {
+						f = ie;
+					}
+					else {
+						f = ie - 1;
+					}
+
+	//				printf("ie = %f; f = %f \n", ie, f);
+
+					// rounding on frac
+					// f.mul_(mval).round_()
+					f = float(int(f * mval));
+					// clipped.div_(mval).mul_(me)
+					clipped = f/mval * me;
+
+	//				printf("clipped = %f \n", clipped);
+
+					// sign magnitude multiplication for subnormal and normal
+					// k = torch.where(i<esbn, clipped, me+clipped)
+					if (i < esbn) {
+						k = clipped;
+					}
+					else {
+						k = me+clipped;
+					}
+
+					// k.clamp_(-max_number, max_number);
+					if (k < -max_number) {
+						k = -max_number;
+					}
+					else if (k > max_number) {
+						k = max_number;
+					}
+
+	//				printf("k = %f \n", k);
+
+					out[co][ci][krow][kcol] = sgn * k * pow(2, offset[co]);
+
+					// convert to fp32 after quantisation
+					input[co][ci][krow][kcol] = out[co][ci][krow][kcol];
+
+	//				printf("quant_out[%d][%d][%d] = %f \n", ci, krow, kcol, out[ci][krow][kcol]);
+				}
+			}
+		}
+	}
+
+}
+
+void quant_act
+(
+	float input[CHANNEL_IN_T][WIDTH][WIDTH],
+	int H_fmap_in
+)
+{
+	float input_tmp[CHANNEL_IN_T][WIDTH][WIDTH];
+
+	// float exp = 2;
+	// float man = 5;
+	float emax = 1.0;  // 2**(exp)-1 - 2**(exp-1);
+	float emin = -2.0; // -2**(exp-1);
+
+	float max_exponent[CHANNEL_IN_T] = {0};
+	float offset[CHANNEL_IN_T] = {0};
+	float shift[CHANNEL_IN_T] = {0};
+
+	float max_number = 2*(2-1/16); // 2**(emax)*(2-2**(-man));
+	float abs_max[CHANNEL_IN_T] = {0};
+
+	float esbn = 0.5; // 2**(emin+1)
+	float lsbn = 2.0;   // 2**(emax)
+	float mval = 32.0;  // 2**(man)
+
+	float i;
+	float ie;
+	float me;
+	float f;
+	float clipped;
+	float k;
+	float out[CHANNEL_IN_T][WIDTH][WIDTH];
+
+	float e;
+	float sgn;
+
+	for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+		abs_max[ci] = 0;
+		for (int krow = 0; krow < H_fmap_in; krow ++) {
+			for (int kcol = 0; kcol < H_fmap_in; kcol ++) {
+				if(abs_max[ci] < abs(input[ci][krow][kcol])) {
+					abs_max[ci] = input[ci][krow][kcol];
+				}
+			}
+		}
+	}
+
+	for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+		max_exponent[ci] = float(int(hls::log2(abs_max[ci])));
+
+		// clamp
+		if (max_exponent[ci] < -128.0) {
+			max_exponent[ci] = -128.0;
+		}
+		else if (max_exponent[ci] > 127.0) {
+			max_exponent[ci] = 127.0;
+		}
+
+		offset[ci] = max_exponent[ci] - emax;
+//		printf("offset[%d] = %f \n", ci, offset[ci]);
+
+		// shared exponent shifting
+		shift[ci] = pow(2, -offset[ci]);
+//		printf("shift[%d] = %f \n", ci, shift[ci]);
+	}
+
+	for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+		for (int krow = 0; krow < H_fmap_in; krow ++) {
+			for (int kcol = 0; kcol < H_fmap_in; kcol ++) {
+
+				// handle subnormal and normal quantization
+				input_tmp[ci][krow][kcol] = input[ci][krow][kcol] * shift[ci];
+				i = input_tmp[ci][krow][kcol];
+
+				sgn = (i > 0) ? 1.0 : -1.0;
+				i = abs(i);
+				e = float(int(hls::log2(i)));
+				// clamp the exponent
+				// e.clamp_(emin+1, emax); // emin+1 for subnormal region
+				if (e < -1) {
+					e = -1;
+				}
+				else if (e > 1) {
+					e = 1;
+				}
+
+//				printf("i = %f; e = %f \n", i, e);
+
+				// unpack frac for subnormal and normal region
+				ie = i * pow(2, -e);
+				me = pow(2, e);
+				// f = torch.where(i<esbn, ie, ie-1);
+				if (i < esbn) {
+					f = ie;
+				}
+				else {
+					f = ie - 1;
+				}
+
+//				printf("ie = %f; f = %f \n", ie, f);
+
+				// rounding on frac
+				// f.mul_(mval).round_()
+				f = float(int(f * mval));
+				// clipped.div_(mval).mul_(me)
+				clipped = f/mval * me;
+
+//				printf("clipped = %f \n", clipped);
+
+				// sign magnitude multiplication for subnormal and normal
+				// k = torch.where(i<esbn, clipped, me+clipped)
+				if (i < esbn) {
+					k = clipped;
+				}
+				else {
+					k = me+clipped;
+				}
+
+				// k.clamp_(-max_number, max_number);
+				if (k < -max_number) {
+					k = -max_number;
+				}
+				else if (k > max_number) {
+					k = max_number;
+				}
+
+//				printf("k = %f \n", k);
+
+				out[ci][krow][kcol] = sgn * k * pow(2, offset[ci]);
+
+				// convert to fp32 after quantisation
+				input[ci][krow][kcol] = out[ci][krow][kcol];
+
+//				printf("quant_out[%d][%d][%d] = %f \n", ci, krow, kcol, out[ci][krow][kcol]);
+			}
+		}
+	}
+
+}
+
+//--------------------------------
 // floating-point golden reference
 //--------------------------------
 
@@ -1062,28 +1347,46 @@ void avgpool(
 	float out_buf_copy[64]
 )
 {
+	float out_temp[CHANNEL_IN_T] = {0};
+#pragma HLS DEPENDENCE variable=out_temp inter false
+
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=avg_inputs dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=out_buf_SC dim=1 complete
+
 	// forward
 	if (ctrl_avgpool == 0) {
 		// buffer init
 		for (int c = 0; c < 64; c ++) {
-			out_buf[c] = 0;
+#pragma HLS PIPELINE II=1
+			out_temp[c] = 0;
 		}
-		for (int c = 0; c < CHANNEL_IN_T; c ++) {
-			for (int s = 0; s < 8; s ++) {
-				for (int ss = 0; ss < 8; ss ++) {
-					 out_buf[c + c_out*CHANNEL_IN_T] += avg_inputs[c][s][ss]/64;
-					 out_buf_copy[c + c_out*CHANNEL_IN_T] += avg_inputs[c][s][ss]/64;
+		for (int s = 0; s < 8; s ++) {
+			for (int ss = 0; ss < 8; ss ++) {
+#pragma HLS PIPELINE II=1
+				for (int c = 0; c < CHANNEL_IN_T; c ++) {
+					out_temp[c + c_out*CHANNEL_IN_T] += avg_inputs[c][s][ss];
 				}
 			}
+		}
+		for (int c = 0; c < CHANNEL_IN_T; c ++) {
+#pragma HLS PIPELINE II=1
+			out_buf[c + c_out*CHANNEL_IN_T] = out_temp[c]/64;
+			out_buf_copy[c + c_out*CHANNEL_IN_T] = out_temp[c]/64;
 		}
 	}
 	// backward
 	else {
+		for (int c = 0; c < CHANNEL_IN_T; c ++) {
+#pragma HLS PIPELINE II=1
+			out_temp[c] = out_buf[c + c_out*CHANNEL_IN_T];
+		}
 		for (int s = 0; s < 8; s ++) {
 			for (int ss = 0; ss < 8; ss ++) {
+#pragma HLS PIPELINE II=1
 				for (int c = 0; c < CHANNEL_IN_T; c ++) {
-					avg_inputs[c][s][ss] = out_buf[c + c_out*CHANNEL_IN_T]/64;
-					out_buf_SC[c][s][ss] = out_buf[c + c_out*CHANNEL_IN_T]/64;
+					avg_inputs[c][s][ss] = out_temp[c]/64;
+					out_buf_SC[c][s][ss] = out_temp[c]/64;
 				}
 			}
 		}
