@@ -522,7 +522,6 @@ void rot180_1x1
 	}
 }
 
-
 void conv_3x3
 (
 	float input[CHANNEL_IN_T][WIDTH][WIDTH],			// in on-chip
@@ -634,7 +633,7 @@ void conv_3x3
 					for (int co = 0; co < CHANNEL_OUT_T; co ++) {
 						if (stride > 1 && ctrl_conv == 0) {
 							out_temp[co] = output_tmp[co][row*2][col*2];
-						}
+						} 
 						output[co][row][col] = out_temp[co];
 					}
 					if (ctrl_conv == 0) {
@@ -1471,6 +1470,63 @@ void conv_1x1_backward (
 }
 
 // AvgPool
+//void avgpool(
+//	float avg_inputs[CHANNEL_IN_T][WIDTH][WIDTH],	// in, 64x8x8
+//	float out_buf[64],								// out, avg_outputs
+//
+//	uint1 ctrl_avgpool,	// 0 for forward and 1 for backward
+//	int c_out,
+//
+//	float out_buf_SC[CHANNEL_IN_T][WIDTH][WIDTH],
+//	float out_buf_copy[64]
+//)
+//{
+//	float out_temp[CHANNEL_IN_T] = {0};
+//#pragma HLS DEPENDENCE variable=out_temp inter false
+//
+//#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
+//#pragma HLS ARRAY_PARTITION variable=avg_inputs dim=1 complete
+//#pragma HLS ARRAY_PARTITION variable=out_buf_SC dim=1 complete
+//
+//	// forward
+//	if (ctrl_avgpool == 0) {
+//		// buffer init
+//		for (int c = 0; c < 64; c ++) {
+//#pragma HLS PIPELINE II=1
+//			out_temp[c] = 0;
+//		}
+//		for (int s = 0; s < 8; s ++) {
+//			for (int ss = 0; ss < 8; ss ++) {
+//#pragma HLS PIPELINE II=1
+//				for (int c = 0; c < CHANNEL_IN_T; c ++) {
+//					out_temp[c + c_out*CHANNEL_IN_T] += avg_inputs[c][s][ss];
+//				}
+//			}
+//		}
+//		for (int c = 0; c < CHANNEL_IN_T; c ++) {
+//#pragma HLS PIPELINE II=1
+//			out_buf[c + c_out*CHANNEL_IN_T] = out_temp[c]/64;
+//			out_buf_copy[c + c_out*CHANNEL_IN_T] = out_temp[c]/64;
+//		}
+//	}
+//	// backward
+//	else {
+//		for (int c = 0; c < CHANNEL_IN_T; c ++) {
+//#pragma HLS PIPELINE II=1
+//			out_temp[c] = out_buf[c + c_out*CHANNEL_IN_T];
+//		}
+//		for (int s = 0; s < 8; s ++) {
+//			for (int ss = 0; ss < 8; ss ++) {
+//#pragma HLS PIPELINE II=1
+//				for (int c = 0; c < CHANNEL_IN_T; c ++) {
+//					avg_inputs[c][s][ss] = out_temp[c]/64;
+//					out_buf_SC[c][s][ss] = out_temp[c]/64;
+//				}
+//			}
+//		}
+//	}
+//}
+
 void avgpool(
 	float avg_inputs[CHANNEL_IN_T][WIDTH][WIDTH],	// in, 64x8x8
 	float out_buf[64],								// out, avg_outputs
@@ -1478,7 +1534,7 @@ void avgpool(
 	uint1 ctrl_avgpool,	// 0 for forward and 1 for backward
 	int c_out,
 
-//	float out_buf_SC[CHANNEL_IN_T][WIDTH][WIDTH],
+	// float out_buf_SC[CHANNEL_IN_T][WIDTH][WIDTH],
 	float out_buf_copy[64]
 )
 {
@@ -1503,7 +1559,7 @@ void avgpool(
 			for (int ss = 0; ss < 8; ss ++) {
 				for (int c = 0; c < CHANNEL_IN_T; c ++) {
 					avg_inputs[c][s][ss] = out_buf[c + c_out*CHANNEL_IN_T]/64;
-//					out_buf_SC[c][s][ss] = out_buf[c + c_out*CHANNEL_IN_T]/64;
+					// out_buf_SC[c][s][ss] = out_buf[c + c_out*CHANNEL_IN_T]/64;
 				}
 			}
 		}
@@ -1521,39 +1577,64 @@ void FC(
 	uint1 ctrl_fc	// 0 for forward and 1 for backward
 )
 {
-	float linear_weight_t[64][10];
+	float out_temp[10] = {0};
+	float in_tmp[64] = {0};
+#pragma HLS DEPENDENCE variable=in_tmp inter false
+#pragma HLS DEPENDENCE variable=out_temp inter false
+
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=in_tmp dim=1 complete
+
+#pragma HLS ARRAY_PARTITION variable=inputs dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=outputs dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=linear_weight dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=linear_weight dim=2 complete
 
 	// forward
 	if (ctrl_fc == 0) {
 		// buffer init
 		for (int coo = 0; coo < 10; coo ++) {
-			outputs[coo] = linear_bias[coo];
+#pragma HLS PIPELINE II=1
+			out_temp[coo] = linear_bias[coo];
 		}
-		for (int coo = 0; coo < 10; coo ++) {
-			for (int cii = 0; cii < 64; cii++) {
-				outputs[coo] += inputs[cii] * linear_weight[coo][cii];
+		for (int cii = 0; cii < 64; cii++) {
+#pragma HLS PIPELINE II=1
+			for (int coo = 0; coo < 10; coo ++) {
+				out_temp[coo] += inputs[cii] * linear_weight[coo][cii];
 			}
 		}
+		for (int coo = 0; coo < 10; coo ++) {
+#pragma HLS PIPELINE II=1
+			outputs[coo] = out_temp[coo];
+		}
 	}
+
 	// backward
 	else {
 		// buffer init
 		for (int cii = 0; cii < 10; cii ++) {
-			inputs[cii] = 0;
+#pragma HLS PIPELINE II=1
+			in_tmp[cii] = 0;
 		}
 		for (int cii = 0; cii < 64; cii++) {
+#pragma HLS PIPELINE II=1
 			for (int coo = 0; coo < 10; coo ++) {
-				linear_weight_t[cii][coo] = linear_weight[coo][cii];
-				inputs[cii] += outputs[coo] * linear_weight_t[cii][coo];
+				in_tmp[cii] += outputs[coo] * linear_weight[coo][cii];
 			}
+		}
+		for (int cii = 0; cii < 64; cii++) {
+#pragma HLS PIPELINE II=1
+			inputs[cii] = in_tmp[cii];
 		}
 		// weight update
 		for (int cii = 0; cii < 64; cii++) {
+#pragma HLS PIPELINE II=1
 			for (int coo = 0; coo < 10; coo ++) {
 				linear_weight[coo][cii] += -lr * inputs_FW[cii] * outputs[coo];
 			}
 		}
 		for (int coo = 0; coo < 10; coo ++) {
+#pragma HLS PIPELINE II=1
 			linear_bias[coo] += -lr * outputs[coo];
 		}
 	}
@@ -1569,11 +1650,30 @@ void shortcut(
 	uint1 ctrl_sc										// if ctrl_sc=0, generate and send out_copy into DDR
 )
 {
+	float in_1[CHANNEL_OUT_T];
+	float in_2[CHANNEL_OUT_T];
+	float out_temp[CHANNEL_OUT_T];
+#pragma HLS ARRAY_PARTITION variable=in_1 dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=in_2 dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
+
+#pragma HLS ARRAY_PARTITION variable=input_a dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=input_b dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=out_buf dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=out_buf_DDR dim=1 complete
+
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
+#pragma HLS PIPELINE II=1
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 
-				out_buf[c][row][col] = input_a[c][row][col] + input_b[c][row][col];
+				in_1[c] = input_a[c][row][col];
+				in_2[c] = input_b[c][row][col];
+				out_temp[c] = in_1[c] + in_2[c];
+
+				for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+					out_buf[c][row][col] = out_temp[c];
+				}
 				if (ctrl_sc == 0) {
 					out_buf_DDR[c][row][col] = out_buf[c][row][col];
 				}
@@ -1619,6 +1719,7 @@ void bn(
 	// mean
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
+#pragma HLS PIPELINE II=1
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				mu[c] += bn_inputs[c][row][col]/N;
 			}
@@ -1627,18 +1728,21 @@ void bn(
 	// std_var
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
+#pragma HLS PIPELINE II=1
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				std_var[c] += (bn_inputs[c][row][col]-mu[c])*(bn_inputs[c][row][col]-mu[c])/N;	// var
 			}
 		}
 	}
 	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+#pragma HLS PIPELINE II=1
 		std_var[c] = hls::sqrt(std_var[c]);
 	}
 
 	// bn_relu
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
+#pragma HLS PIPELINE II=1
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				out_buf[c][row][col] = bn_wt[c]*(bn_inputs[c][row][col]-mu[c])/(std_var[c] + eps) + bn_bias[c];
 			}
@@ -2000,3 +2104,4 @@ void bn_relu_bp(
 }
 
 #endif
+
