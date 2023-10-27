@@ -45,10 +45,10 @@ void quant_wt
 	float esbn = 0.5; 	// 2**(emin+1)
 	float lsbn = 2.0;   // 2**(emax)
 	float mval = 32.0;  // 2**(man)
-	
+
 	float i;
 	float ie;
-	float me; 
+	float me;
 	float f;
 	float clipped;
 	float k;
@@ -160,6 +160,140 @@ void quant_wt
 	//				printf("quant_out[%d][%d][%d] = %f \n", ci, krow, kcol, out[ci][krow][kcol]);
 				}
 			}
+		}
+	}
+
+}
+
+void quant_wt_1x1
+(
+	float input[CHANNEL_OUT_T][CHANNEL_IN_T]
+)
+{
+	float input_tmp[CHANNEL_OUT_T][CHANNEL_IN_T];
+
+	// float exp = 2;
+	// float man = 5;
+	float emax = 1.0;  // 2**(exp)-1 - 2**(exp-1);
+	float emin = -2.0; // -2**(exp-1);
+
+	float max_exponent[CHANNEL_OUT_T] = {0};
+	float offset[CHANNEL_OUT_T] = {0};
+	float shift[CHANNEL_OUT_T] = {0};
+
+	float max_number = 2*(2-1/16); // 2**(emax)*(2-2**(-man));
+	float abs_max[CHANNEL_OUT_T] = {0};
+
+	float esbn = 0.5; 	// 2**(emin+1)
+	float lsbn = 2.0;   // 2**(emax)
+	float mval = 32.0;  // 2**(man)
+
+	float i;
+	float ie;
+	float me;
+	float f;
+	float clipped;
+	float k;
+	float out[CHANNEL_OUT_T][CHANNEL_IN_T];
+
+	float e;
+	float sgn;
+
+	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+		abs_max[co] = 0;
+		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+			if(abs_max[co] < abs(input[co][ci])) {
+				abs_max[co] = input[co][ci];
+			}
+		}
+	}
+
+	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+		max_exponent[co] = float(int(hls::log2(abs_max[co])));
+
+		// clamp
+		if (max_exponent[co] < -128.0) {
+			max_exponent[co] = -128.0;
+		}
+		else if (max_exponent[co] > 127.0) {
+			max_exponent[co] = 127.0;
+		}
+
+		offset[co] = max_exponent[co] - emax;
+//		printf("offset[%d] = %f \n", ci, offset[ci]);
+
+		// shared exponent shifting
+		shift[co] = pow(2, -offset[co]);
+//		printf("shift[%d] = %f \n", ci, shift[ci]);
+	}
+
+	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
+		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
+
+			// handle subnormal and normal quantization
+			input_tmp[co][ci] = input[co][ci] * shift[co];
+			i = input_tmp[co][ci];
+
+			sgn = (i > 0) ? 1.0 : -1.0;
+			i = abs(i);
+			e = float(int(hls::log2(i)));
+			// clamp the exponent
+			// e.clamp_(emin+1, emax); // emin+1 for subnormal region
+			if (e < -1) {
+				e = -1;
+			}
+			else if (e > 1) {
+				e = 1;
+			}
+
+//				printf("i = %f; e = %f \n", i, e);
+
+			// unpack frac for subnormal and normal region
+			ie = i * pow(2, -e);
+			me = pow(2, e);
+			// f = torch.where(i<esbn, ie, ie-1);
+			if (i < esbn) {
+				f = ie;
+			}
+			else {
+				f = ie - 1;
+			}
+
+//				printf("ie = %f; f = %f \n", ie, f);
+
+			// rounding on frac
+			// f.mul_(mval).round_()
+			f = float(int(f * mval));
+			// clipped.div_(mval).mul_(me)
+			clipped = f/mval * me;
+
+//				printf("clipped = %f \n", clipped);
+
+			// sign magnitude multiplication for subnormal and normal
+			// k = torch.where(i<esbn, clipped, me+clipped)
+			if (i < esbn) {
+				k = clipped;
+			}
+			else {
+				k = me+clipped;
+			}
+
+			// k.clamp_(-max_number, max_number);
+			if (k < -max_number) {
+				k = -max_number;
+			}
+			else if (k > max_number) {
+				k = max_number;
+			}
+
+//			printf("k = %f \n", k);
+
+			out[co][ci] = sgn * k * pow(2, offset[co]);
+
+			// convert to fp32 after quantisation
+			input[co][ci] = out[co][ci];
+
+//			printf("quant_out[%d][%d][%d] = %f \n", ci, krow, kcol, out[ci][krow][kcol]);
 		}
 	}
 
