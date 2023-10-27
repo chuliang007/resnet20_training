@@ -20,425 +20,6 @@ float eps = 1e-10;
 float mom = 0.9;
 
 //--------------------------------
-// block minifloat qantisation
-//--------------------------------
-
-void quant_wt
-(
-	float input[CHANNEL_OUT_T][CHANNEL_IN_T][3][3]
-)
-{
-	float input_tmp[CHANNEL_OUT_T][CHANNEL_IN_T][3][3];
-
-	// float exp = 2;
-	// float man = 5;
-	float emax = 1.0;  // 2**(exp)-1 - 2**(exp-1);
-	float emin = -2.0; // -2**(exp-1);
-
-	float max_exponent[CHANNEL_OUT_T] = {0};
-	float offset[CHANNEL_OUT_T] = {0};
-	float shift[CHANNEL_OUT_T] = {0};
-
-	float max_number = 2*(2-1/16); // 2**(emax)*(2-2**(-man));
-	float abs_max[CHANNEL_OUT_T] = {0};
-
-	float esbn = 0.5; 	// 2**(emin+1)
-	float lsbn = 2.0;   // 2**(emax)
-	float mval = 32.0;  // 2**(man)
-	
-	float i;
-	float ie;
-	float me; 
-	float f;
-	float clipped;
-	float k;
-	float out[CHANNEL_OUT_T][CHANNEL_IN_T][WIDTH][WIDTH];
-
-	float e;
-	float sgn;
-
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		abs_max[co] = 0;
-		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-			for (int krow = 0; krow < 3; krow ++) {
-				for (int kcol = 0; kcol < 3; kcol ++) {
-					if(abs_max[co] < abs(input[co][ci][krow][kcol])) {
-						abs_max[co] = input[co][ci][krow][kcol];
-					}
-				}
-			}
-		}
-	}
-
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		max_exponent[co] = float(int(hls::log2(abs_max[co])));
-
-		// clamp
-		if (max_exponent[co] < -128.0) {
-			max_exponent[co] = -128.0;
-		}
-		else if (max_exponent[co] > 127.0) {
-			max_exponent[co] = 127.0;
-		}
-
-		offset[co] = max_exponent[co] - emax;
-//		printf("offset[%d] = %f \n", ci, offset[ci]);
-
-		// shared exponent shifting
-		shift[co] = pow(2, -offset[co]);
-//		printf("shift[%d] = %f \n", ci, shift[ci]);
-	}
-
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-			for (int krow = 0; krow < 3; krow ++) {
-				for (int kcol = 0; kcol < 3; kcol ++) {
-
-					// handle subnormal and normal quantization
-					input_tmp[co][ci][krow][kcol] = input[co][ci][krow][kcol] * shift[co];
-					i = input_tmp[co][ci][krow][kcol];
-
-					sgn = (i > 0) ? 1.0 : -1.0;
-					i = abs(i);
-					e = float(int(hls::log2(i)));
-					// clamp the exponent
-					// e.clamp_(emin+1, emax); // emin+1 for subnormal region
-					if (e < -1) {
-						e = -1;
-					}
-					else if (e > 1) {
-						e = 1;
-					}
-
-	//				printf("i = %f; e = %f \n", i, e);
-
-					// unpack frac for subnormal and normal region
-					ie = i * pow(2, -e);
-					me = pow(2, e);
-					// f = torch.where(i<esbn, ie, ie-1);
-					if (i < esbn) {
-						f = ie;
-					}
-					else {
-						f = ie - 1;
-					}
-
-	//				printf("ie = %f; f = %f \n", ie, f);
-
-					// rounding on frac
-					// f.mul_(mval).round_()
-					f = float(int(f * mval));
-					// clipped.div_(mval).mul_(me)
-					clipped = f/mval * me;
-
-	//				printf("clipped = %f \n", clipped);
-
-					// sign magnitude multiplication for subnormal and normal
-					// k = torch.where(i<esbn, clipped, me+clipped)
-					if (i < esbn) {
-						k = clipped;
-					}
-					else {
-						k = me+clipped;
-					}
-
-					// k.clamp_(-max_number, max_number);
-					if (k < -max_number) {
-						k = -max_number;
-					}
-					else if (k > max_number) {
-						k = max_number;
-					}
-
-	//				printf("k = %f \n", k);
-
-					out[co][ci][krow][kcol] = sgn * k * pow(2, offset[co]);
-
-					// convert to fp32 after quantisation
-					input[co][ci][krow][kcol] = out[co][ci][krow][kcol];
-
-	//				printf("quant_out[%d][%d][%d] = %f \n", ci, krow, kcol, out[ci][krow][kcol]);
-				}
-			}
-		}
-	}
-
-}
-
-void quant_wt_1x1
-(
-	float input[CHANNEL_OUT_T][CHANNEL_IN_T]
-)
-{
-	float input_tmp[CHANNEL_OUT_T][CHANNEL_IN_T];
-
-	// float exp = 2;
-	// float man = 5;
-	float emax = 1.0;  // 2**(exp)-1 - 2**(exp-1);
-	float emin = -2.0; // -2**(exp-1);
-
-	float max_exponent[CHANNEL_OUT_T] = {0};
-	float offset[CHANNEL_OUT_T] = {0};
-	float shift[CHANNEL_OUT_T] = {0};
-
-	float max_number = 2*(2-1/16); // 2**(emax)*(2-2**(-man));
-	float abs_max[CHANNEL_OUT_T] = {0};
-
-	float esbn = 0.5; 	// 2**(emin+1)
-	float lsbn = 2.0;   // 2**(emax)
-	float mval = 32.0;  // 2**(man)
-
-	float i;
-	float ie;
-	float me;
-	float f;
-	float clipped;
-	float k;
-	float out[CHANNEL_OUT_T][CHANNEL_IN_T];
-
-	float e;
-	float sgn;
-
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		abs_max[co] = 0;
-		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-			if(abs_max[co] < abs(input[co][ci])) {
-				abs_max[co] = input[co][ci];
-			}
-		}
-	}
-
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		max_exponent[co] = float(int(hls::log2(abs_max[co])));
-
-		// clamp
-		if (max_exponent[co] < -128.0) {
-			max_exponent[co] = -128.0;
-		}
-		else if (max_exponent[co] > 127.0) {
-			max_exponent[co] = 127.0;
-		}
-
-		offset[co] = max_exponent[co] - emax;
-//		printf("offset[%d] = %f \n", ci, offset[ci]);
-
-		// shared exponent shifting
-		shift[co] = pow(2, -offset[co]);
-//		printf("shift[%d] = %f \n", ci, shift[ci]);
-	}
-
-	for (int co = 0; co < CHANNEL_OUT_T; co ++) {
-		for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-
-			// handle subnormal and normal quantization
-			input_tmp[co][ci] = input[co][ci] * shift[co];
-			i = input_tmp[co][ci];
-
-			sgn = (i > 0) ? 1.0 : -1.0;
-			i = abs(i);
-			e = float(int(hls::log2(i)));
-			// clamp the exponent
-			// e.clamp_(emin+1, emax); // emin+1 for subnormal region
-			if (e < -1) {
-				e = -1;
-			}
-			else if (e > 1) {
-				e = 1;
-			}
-
-//				printf("i = %f; e = %f \n", i, e);
-
-			// unpack frac for subnormal and normal region
-			ie = i * pow(2, -e);
-			me = pow(2, e);
-			// f = torch.where(i<esbn, ie, ie-1);
-			if (i < esbn) {
-				f = ie;
-			}
-			else {
-				f = ie - 1;
-			}
-
-//				printf("ie = %f; f = %f \n", ie, f);
-
-			// rounding on frac
-			// f.mul_(mval).round_()
-			f = float(int(f * mval));
-			// clipped.div_(mval).mul_(me)
-			clipped = f/mval * me;
-
-//				printf("clipped = %f \n", clipped);
-
-			// sign magnitude multiplication for subnormal and normal
-			// k = torch.where(i<esbn, clipped, me+clipped)
-			if (i < esbn) {
-				k = clipped;
-			}
-			else {
-				k = me+clipped;
-			}
-
-			// k.clamp_(-max_number, max_number);
-			if (k < -max_number) {
-				k = -max_number;
-			}
-			else if (k > max_number) {
-				k = max_number;
-			}
-
-//			printf("k = %f \n", k);
-
-			out[co][ci] = sgn * k * pow(2, offset[co]);
-
-			// convert to fp32 after quantisation
-			input[co][ci] = out[co][ci];
-
-//			printf("quant_out[%d][%d][%d] = %f \n", ci, krow, kcol, out[ci][krow][kcol]);
-		}
-	}
-
-}
-
-void quant_act
-(
-	float input[CHANNEL_IN_T][WIDTH][WIDTH],
-	int H_fmap_in
-)
-{
-	float input_tmp[CHANNEL_IN_T][WIDTH][WIDTH];
-
-	// float exp = 2;
-	// float man = 5;
-	float emax = 1.0;  // 2**(exp)-1 - 2**(exp-1);
-	float emin = -2.0; // -2**(exp-1);
-
-	float max_exponent[CHANNEL_IN_T] = {0};
-	float offset[CHANNEL_IN_T] = {0};
-	float shift[CHANNEL_IN_T] = {0};
-
-	float max_number = 2*(2-1/16); // 2**(emax)*(2-2**(-man));
-	float abs_max[CHANNEL_IN_T] = {0};
-
-	float esbn = 0.5; // 2**(emin+1)
-	float lsbn = 2.0;   // 2**(emax)
-	float mval = 32.0;  // 2**(man)
-
-	float i;
-	float ie;
-	float me;
-	float f;
-	float clipped;
-	float k;
-	float out[CHANNEL_IN_T][WIDTH][WIDTH];
-
-	float e;
-	float sgn;
-
-	for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-		abs_max[ci] = 0;
-		for (int krow = 0; krow < H_fmap_in; krow ++) {
-			for (int kcol = 0; kcol < H_fmap_in; kcol ++) {
-				if(abs_max[ci] < abs(input[ci][krow][kcol])) {
-					abs_max[ci] = input[ci][krow][kcol];
-				}
-			}
-		}
-	}
-
-	for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-		max_exponent[ci] = float(int(hls::log2(abs_max[ci])));
-
-		// clamp
-		if (max_exponent[ci] < -128.0) {
-			max_exponent[ci] = -128.0;
-		}
-		else if (max_exponent[ci] > 127.0) {
-			max_exponent[ci] = 127.0;
-		}
-
-		offset[ci] = max_exponent[ci] - emax;
-//		printf("offset[%d] = %f \n", ci, offset[ci]);
-
-		// shared exponent shifting
-		shift[ci] = pow(2, -offset[ci]);
-//		printf("shift[%d] = %f \n", ci, shift[ci]);
-	}
-
-	for (int ci = 0; ci < CHANNEL_IN_T; ci ++) {
-		for (int krow = 0; krow < H_fmap_in; krow ++) {
-			for (int kcol = 0; kcol < H_fmap_in; kcol ++) {
-
-				// handle subnormal and normal quantization
-				input_tmp[ci][krow][kcol] = input[ci][krow][kcol] * shift[ci];
-				i = input_tmp[ci][krow][kcol];
-
-				sgn = (i > 0) ? 1.0 : -1.0;
-				i = abs(i);
-				e = float(int(hls::log2(i)));
-				// clamp the exponent
-				// e.clamp_(emin+1, emax); // emin+1 for subnormal region
-				if (e < -1) {
-					e = -1;
-				}
-				else if (e > 1) {
-					e = 1;
-				}
-
-//				printf("i = %f; e = %f \n", i, e);
-
-				// unpack frac for subnormal and normal region
-				ie = i * pow(2, -e);
-				me = pow(2, e);
-				// f = torch.where(i<esbn, ie, ie-1);
-				if (i < esbn) {
-					f = ie;
-				}
-				else {
-					f = ie - 1;
-				}
-
-//				printf("ie = %f; f = %f \n", ie, f);
-
-				// rounding on frac
-				// f.mul_(mval).round_()
-				f = float(int(f * mval));
-				// clipped.div_(mval).mul_(me)
-				clipped = f/mval * me;
-
-//				printf("clipped = %f \n", clipped);
-
-				// sign magnitude multiplication for subnormal and normal
-				// k = torch.where(i<esbn, clipped, me+clipped)
-				if (i < esbn) {
-					k = clipped;
-				}
-				else {
-					k = me+clipped;
-				}
-
-				// k.clamp_(-max_number, max_number);
-				if (k < -max_number) {
-					k = -max_number;
-				}
-				else if (k > max_number) {
-					k = max_number;
-				}
-
-//				printf("k = %f \n", k);
-
-				out[ci][krow][kcol] = sgn * k * pow(2, offset[ci]);
-
-				// convert to fp32 after quantisation
-				input[ci][krow][kcol] = out[ci][krow][kcol];
-
-//				printf("quant_out[%d][%d][%d] = %f \n", ci, krow, kcol, out[ci][krow][kcol]);
-			}
-		}
-	}
-
-}
-
-//--------------------------------
 // floating-point golden reference
 //--------------------------------
 
@@ -1520,39 +1101,64 @@ void FC(
 	uint1 ctrl_fc	// 0 for forward and 1 for backward
 )
 {
-	float linear_weight_t[64][10];
+	float out_temp[10] = {0};
+	float in_tmp[64] = {0};
+#pragma HLS DEPENDENCE variable=in_tmp inter false
+#pragma HLS DEPENDENCE variable=out_temp inter false
+
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=in_tmp dim=1 complete
+
+#pragma HLS ARRAY_PARTITION variable=inputs dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=outputs dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=linear_weight dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=linear_weight dim=2 complete
 
 	// forward
 	if (ctrl_fc == 0) {
 		// buffer init
 		for (int coo = 0; coo < 10; coo ++) {
-			outputs[coo] = linear_bias[coo];
+#pragma HLS PIPELINE II=1
+			out_temp[coo] = linear_bias[coo];
 		}
-		for (int coo = 0; coo < 10; coo ++) {
-			for (int cii = 0; cii < 64; cii++) {
-				outputs[coo] += inputs[cii] * linear_weight[coo][cii];
+		for (int cii = 0; cii < 64; cii++) {
+#pragma HLS PIPELINE II=1
+			for (int coo = 0; coo < 10; coo ++) {
+				out_temp[coo] += inputs[cii] * linear_weight[coo][cii];
 			}
 		}
+		for (int coo = 0; coo < 10; coo ++) {
+#pragma HLS PIPELINE II=1
+			outputs[coo] = out_temp[coo];
+		}
 	}
+
 	// backward
 	else {
 		// buffer init
 		for (int cii = 0; cii < 10; cii ++) {
-			inputs[cii] = 0;
+#pragma HLS PIPELINE II=1
+			in_tmp[cii] = 0;
 		}
 		for (int cii = 0; cii < 64; cii++) {
+#pragma HLS PIPELINE II=1
 			for (int coo = 0; coo < 10; coo ++) {
-				linear_weight_t[cii][coo] = linear_weight[coo][cii];
-				inputs[cii] += outputs[coo] * linear_weight_t[cii][coo];
+				in_tmp[cii] += outputs[coo] * linear_weight[coo][cii];
 			}
+		}
+		for (int cii = 0; cii < 64; cii++) {
+#pragma HLS PIPELINE II=1
+			inputs[cii] = in_tmp[cii];
 		}
 		// weight update
 		for (int cii = 0; cii < 64; cii++) {
+#pragma HLS PIPELINE II=1
 			for (int coo = 0; coo < 10; coo ++) {
 				linear_weight[coo][cii] += -lr * inputs_FW[cii] * outputs[coo];
 			}
 		}
 		for (int coo = 0; coo < 10; coo ++) {
+#pragma HLS PIPELINE II=1
 			linear_bias[coo] += -lr * outputs[coo];
 		}
 	}
@@ -1568,11 +1174,30 @@ void shortcut(
 	uint1 ctrl_sc										// if ctrl_sc=0, generate and send out_copy into DDR
 )
 {
+	float in_1[CHANNEL_OUT_T];
+	float in_2[CHANNEL_OUT_T];
+	float out_temp[CHANNEL_OUT_T];
+#pragma HLS ARRAY_PARTITION variable=in_1 dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=in_2 dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=out_temp dim=1 complete
+
+#pragma HLS ARRAY_PARTITION variable=input_a dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=input_b dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=out_buf dim=1 complete
+#pragma HLS ARRAY_PARTITION variable=out_buf_DDR dim=1 complete
+
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
+#pragma HLS PIPELINE II=1
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 
-				out_buf[c][row][col] = input_a[c][row][col] + input_b[c][row][col];
+				in_1[c] = input_a[c][row][col];
+				in_2[c] = input_b[c][row][col];
+				out_temp[c] = in_1[c] + in_2[c];
+
+				for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+					out_buf[c][row][col] = out_temp[c];
+				}
 				if (ctrl_sc == 0) {
 					out_buf_DDR[c][row][col] = out_buf[c][row][col];
 				}
@@ -1618,6 +1243,7 @@ void bn(
 	// mean
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
+#pragma HLS PIPELINE II=1
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				mu[c] += bn_inputs[c][row][col]/N;
 			}
@@ -1626,18 +1252,21 @@ void bn(
 	// std_var
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
+#pragma HLS PIPELINE II=1
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				std_var[c] += (bn_inputs[c][row][col]-mu[c])*(bn_inputs[c][row][col]-mu[c])/N;	// var
 			}
 		}
 	}
 	for (int c = 0; c < CHANNEL_OUT_T; c ++) {
+#pragma HLS PIPELINE II=1
 		std_var[c] = hls::sqrt(std_var[c]);
 	}
 
 	// bn_relu
 	for (int row = 0; row < H_fmap_in; row ++) {
 		for (int col = 0; col < H_fmap_in; col ++) {
+#pragma HLS PIPELINE II=1
 			for (int c = 0; c < CHANNEL_OUT_T; c ++) {
 				out_buf[c][row][col] = bn_wt[c]*(bn_inputs[c][row][col]-mu[c])/(std_var[c] + eps) + bn_bias[c];
 			}
