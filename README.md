@@ -29,4 +29,13 @@ The repo describes an HLS-based CNN training accelerator in floating-point forma
 >> ```data_batch_1.bin``` <br>
 >> ```train.bin``` <br> (image data from http://www.cs.toronto.edu/~kriz/cifar.html)
 
-
+## Please cite our paper
+```bibtex
+@inproceedings{guo2023boost,
+  title={BOOST: block minifloat-based on-device CNN training accelerator with transfer learning},
+  author={Guo, Chuliang and Lou, Binglei and Liu, Xueyuan and Boland, David and Leong, Philip HW and Zhuo, Cheng},
+  booktitle={2023 IEEE/ACM International Conference on Computer Aided Design (ICCAD)},
+  pages={1--9},
+  year={2023},
+  organization={IEEE}
+}
