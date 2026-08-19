@@ -1,3 +1,5 @@
+
+
 # CNN training accelerator
 
 The repo describes an HLS-based CNN training accelerator in floating-point format for a reference design, using the back-propagation algorithm with the SGD optimizer.
@@ -39,3 +41,4 @@ The repo describes an HLS-based CNN training accelerator in floating-point forma
   year={2023},
   organization={IEEE}
 }
+```
